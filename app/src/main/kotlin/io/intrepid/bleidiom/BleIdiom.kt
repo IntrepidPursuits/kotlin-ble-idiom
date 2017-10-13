@@ -1,68 +1,143 @@
 package io.intrepid.bleidiom
 
 import kotlin.reflect.KClass
-import kotlin.reflect.KMutableProperty
+import kotlin.reflect.KMutableProperty1
 import kotlin.reflect.KProperty
+import kotlin.reflect.KProperty1
 
+/**
+ * Marks the start of a new BLE service definition.
+ */
 interface BleIdiomDSL {
-    // The forClass 'keyword' defines the target BleService sub-class to be configured with the 'with' DSL.
+    /**
+     * Specifies the [BleService] subclass **for** which this [BleIdiomDSL] is created.
+     * @param bleServiceClass The target [BleService] subclass
+     */
     infix
-    fun forClass(bleServiceClass: KClass<out BleService<*>>): With
+    fun forClass(bleServiceClass: KClass<out BleService<*>>): ForClassWith
 
-    interface With {
-        // The with 'keyword' defines the DSL that configures the targeted BleService sub-class.
+    interface ForClassWith {
+        /**
+         * Registers the target [BleService] subclass,
+         * then creates a new [BleServiceDSL]
+         * that is configured by the given [dsl] code-block.
+         * @param dsl The dsl configuration *with* which the registered [BleService] is configured.
+         */
         infix
         fun with(dsl: BleServiceDSL.() -> Unit)
     }
 }
 
+/**
+ * Defines the DSL of the targeted [BleService].
+ */
 interface BleServiceDSL {
-    // The UUID of the BLE-service
+    /**
+     * The UUID of the BLE **Service**
+     */
     var uuid: String
 
-    // The read 'keyword' of the BLE-DSL that starts defining one or more readable BLE-characteristics
+    /**
+     * Starts the definition of the readable BLE characteristics.
+     * @param dsl The block of code that configures the readable BLE characteristics for the targeted [BleService].
+     */
     fun read(dsl: BleServiceReadDSL.() -> Unit)
 
-    // The write 'keyword' of the BLE-DSL that starts defining one or more writable BLE-characteristics
+    /**
+     * Starts the definition of the writable BLE characteristics.
+     * @param dsl The block of code that configures the writable BLE characteristics for the targeted [BleService].
+     */
     fun write(dsl: BleServiceWriteDSL.() -> Unit)
 }
 
+/**
+ * Defines readable BLE characteristics.
+ */
 interface BleServiceReadDSL {
-    // The data 'keyword' of the BLE-DSL that starts defining a readable BLE-characteristic
+    /**
+     * 'data' keyword to make the DSL more legible.
+     */
     val data: ReadableCharDSL
 }
 
+/**
+ * Defines writable BLE characteristics.
+ */
 interface BleServiceWriteDSL {
-    // The data 'keyword' of the BLE-DSL that starts defining a writable BLE-characteristic
+    /**
+     * 'data' keyword to make the DSL more legible.
+     */
     val data: WritableCharDSL
 }
 
+/**
+ * Ties a readable BLE characteristic (its UUID) to a [BleService]'s property.
+ */
 interface ReadableCharDSL {
-    // The from 'keyword' defines the UUID of the BLE-characteristic that is the source of the BLE-data.
+    /**
+     * Defines a remote BLE characteristic from which a value can be read.
+     * @param uuid The UUID representing the remote BLE characteristic.
+     */
     infix
     fun from(uuid: String): ReadableCharDSL
 
-    // The into 'keyword' defines the BleCharValue property that is the target of the BLE-data,
-    // from which code then can *read* the incoming value.
+    /**
+     * Defines which [BleService]'s property represents this readable BLE characteristic
+     * that can be read by Kotlin code.
+     * @param property The readable [Svc] property to be tied to this readable BLE characteristic.
+     */
     infix
-    fun into(property: KProperty<*>): ReadableCharDSL
+    fun <Svc : BleService<Svc>> into(property: KProperty1<Svc, BleCharValue<*>>): ReadableCharDSL
 }
 
+/**
+ * Ties a writable BLE characteristic (its UUID) to a [BleService]'s property.
+ */
 interface WritableCharDSL {
-    // The from 'keyword' defines the BleCharValue property that is the source of the BLE-data.
-    // Code can *write* values to this property that is then source of the outgoing BLE-data,
+    /**
+     * Defines which [BleService]'s property represents this writable BLE characteristic,
+     * that can be assigned/changed by Kotlin code.
+     * @param property The writable [Svc] property to be tied to this writable BLE characteristic.
+     */
     infix
-    fun from(property: KMutableProperty<*>): WritableCharDSL
+    fun <Svc : BleService<Svc>> from(property: KMutableProperty1<Svc, out BleCharValue<*>>): WritableCharDSL
 
-    // The into 'keyword' defines the UUID of the BLE-characteristic that is the target of the BLE-data.
+    /**
+     * Defines a remote BLE characteristic that can be written to.
+     * @param uuid The UUID representing the remote BLE characteristic.
+     */
     infix
     fun into(uuid: String): WritableCharDSL
 }
 
-// Defines the DSL that allows the configuration of a bleCharHandler
+/**
+ * When creating a new [BleService], the properties that represent its BLE characteristics must
+ * be instances of [BleCharValue] that **delegate** to implementations of this [BleCharHandlerDSL] interface.
+ *
+ * This interface allows each property ([BleCharValue]) to define appropriate transformer-functions that will
+ * transform [ByteArray]s into instances of the [BleCharValue]'s own [Val]-type and vice-versa.
+ *
+ * When configuring your own transformer-functions,
+ * either assign a lambda to [forClass]
+ * or assign lambdas to both [fromByteArray] and [toByteArray].
+ */
 interface BleCharHandlerDSL<Val : Any> {
+    /**
+     * Assigns the appropriate values to [fromByteArray] and [toByteArray] when it's set
+     * to a known [KClass].
+     *
+     * This property can be set only. It can't be read.
+     */
     var forClass: KClass<out Val>
+
+    /**
+     * The lambda that transforms a [ByteArray] into a value of the property's type [Val].
+     */
     var fromByteArray: ((ByteArray) -> Val)?
+
+    /**
+     * The lambda that transforms a value of the property's type [Val] into a [ByteArray].
+     */
     var toByteArray: ((Val) -> ByteArray)?
 
     operator

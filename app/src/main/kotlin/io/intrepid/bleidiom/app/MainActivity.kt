@@ -23,6 +23,7 @@ class MainActivity : AppCompatActivity() {
             RxBleLog.setLogLevel(RxBleLog.VERBOSE)
             RxBleLog.setLogger { level, tag, msg -> Log.println(level, tag, msg) }
 
+            // Upon loading of this MainActivity class, define and register the BatterijService.
             defineBleServices()
         }
     }
@@ -34,6 +35,38 @@ class MainActivity : AppCompatActivity() {
     private var counter = 0
 
     private lateinit var textView: TextView
+
+    /**
+     * Example of how to read a Byte BLE characteristic.
+     * @param batterijService from which to get the name.
+     */
+    private fun getBatterijPercentage(batterijService: BatterijService) =
+        batterijService[BatterijService::percentage]
+
+    /**
+     * Example of how to read a String BLE characteristic.
+     * @param batterijService from which to get the percentage.
+     */
+    private fun getBatterijName(batterijService: BatterijService) =
+        batterijService[BatterijService::name]
+
+    /**
+     * Example of how to write a value to a BLE characteristic
+     * @param batterijService whose name will be set.
+     * @param name The name to be set.
+     */
+    private fun setBatterijName(batterijService: BatterijService, name: String) {
+        batterijService[BatterijService::name] = name
+    }
+
+    /**
+     * Example of how to emit (stream) values to a BLE characteristic.
+     * @param batterijService whose name will be set each time the Observable emits a new value.
+     * @param nameStream The Observable that will 'stream' values for the service's name.
+     */
+    private fun streamBatterijName(batterijService: BatterijService, nameStream: Observable<String>) {
+        batterijService[BatterijService::name] = nameStream
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -47,11 +80,9 @@ class MainActivity : AppCompatActivity() {
             val battery = batteryService
             if (battery != null) {
 
-                battery -= BatterijService::name
-                battery[BatterijService::name] = Observable.fromCallable { "Counter reached ${++counter}" }
-                        .repeatWhen { completed -> completed.delay(3, TimeUnit.SECONDS) }
+                setBatterijName(battery, "Counter reached ${++counter}")
 
-                battery[BatterijService::name]
+                getBatterijName(battery)
                         .take(1)
                         .observeOn(AndroidSchedulers.mainThread())
                         .subscribeBy({ name -> toolbar.title = name })
@@ -87,12 +118,13 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
     }
 
-    private fun getPercentageObservable(scanner: BleScanner, connectedServiceObs: Observable<BatterijService>): Observable<Byte> {
+    private fun getPercentageObservable(scanner: BleScanner, connectedServiceObs: Observable<BatterijService>):
+            Observable<Byte> {
         textView.alpha = 1f
         textView.text = "..."
 
         return connectedServiceObs
-                .flatMap { battery -> battery[BatterijService::percentage] }
+                .flatMap { battery -> getBatterijPercentage(battery) }
                 .take(1)
                 .repeatWhen { completed -> completed.delay(2, TimeUnit.SECONDS) }
                 .observeOn(AndroidSchedulers.mainThread())
@@ -109,9 +141,9 @@ class MainActivity : AppCompatActivity() {
                 .flatMap { service -> service.connect() }
                 .doOnNext { service -> batteryService = service }
                 .replay()
-                .autoConnect(1, { replayConnection ->
+                .autoConnect(1) { replayConnection ->
                     connectedServiceSub = replayConnection
-                })
+                }
     }
 
     private fun disconnect() {

@@ -8,7 +8,12 @@ import rx.lang.kotlin.subscribeBy
 import kotlin.reflect.KMutableProperty1
 import kotlin.reflect.KProperty1
 
-// Base class of a class that represents a BLE-service
+/**
+ * The subclass of every BLE Service that can be configured and registered by the [BleIdiomDSL].
+ *
+ * [Svc] is the subclass itself.
+ * @sample io.intrepid.bleidiom.app.BatterijService
+ */
 open class BleService<Svc : BleService<Svc>> {
     internal val serviceDSL: BleServiceDSLImpl by lazy {
         BleServiceDSLImpl.Registration.getServiceDSL(this)!!
@@ -19,42 +24,68 @@ open class BleService<Svc : BleService<Svc>> {
 
     private val writeSubscriptions: MutableMap<String, Subscription> = mutableMapOf()
 
-    // Connects to the BLE-device and returns an Observable of this instance.
+    /**
+     * Connects to the device that contains this service.
+     *
+     * @return [Observable] that emits this object when the connection is successful.
+     */
     fun connect() = device?.establishConnection(false)
             ?.doOnUnsubscribe { handleDisconnect() }
             ?.map { conn -> connection = conn; asSvc() }
             ?: Observable.empty()
 
-    // Requests to get a value of type <Val> from a readable BLE-characteristic and observes the incoming result
+    /**
+     * Requests to read a BLE characteristic's value from the remote device. Upon success, the returned
+     * Observable emits the read value.
+     *
+     * @param property A readable property of this [BleService]
+     * @return [Observable] that will emit the read value.
+     */
     operator
-    fun <Val : Any> get(key: KProperty1<Svc, BleCharValue<Val>>) = key.get(asSvc()).read()
+    fun <Val : Any> get(property: KProperty1<Svc, BleCharValue<Val>>) = property.get(asSvc()).read()
 
-    // Sends/posts a value of type <Val> to a writable BLE-characteristic.
+    /**
+     * Writes/sends a value of type [Val] to a writable BLE characteristic.
+     *
+     * @param property A writable property of this [BleService].
+     * @param value The value to be written to the BLE characteristic.
+     */
     operator
-    fun <Val : Any> set(key: KMutableProperty1<Svc, BleCharValue<Val>>, value: Val) {
-        with(key) {
+    fun <Val : Any> set(property: KMutableProperty1<Svc, BleCharValue<Val>>, value: Val) {
+        with(property) {
             val svc = asSvc()
             set(svc, BleCharValue(value))
+            // For now, errors are ignored (to do)
             writeSubscriptions[name] = get(svc).write().subscribeBy(onError = {})
         }
     }
 
-    // Sends/posts values of type <Val> to a writable BLE-characteristic emitted by the provided observable
+    /**
+     * Writes/sends a value of type [Val] to a writable BLE characteristic each time
+     * the given value-stream emits a new value.
+     *
+     * @param property A writable property of this [BleService].
+     * @param valueStream The stream of values to be written to the BLE characteristic.
+     */
     operator
-    fun <Val : Any> set(key: KMutableProperty1<Svc, BleCharValue<Val>>, value: Observable<Val>) {
-        with(key) {
+    fun <Val : Any> set(property: KMutableProperty1<Svc, BleCharValue<Val>>, valueStream: Observable<Val>) {
+        with(property) {
             val svc = asSvc()
-            writeSubscriptions[name] = value
+            writeSubscriptions[name] = valueStream
                     .doOnNext { set(svc, BleCharValue(it)) }
                     .flatMap { get(svc).write() }
                     .subscribeBy(onError = {})
         }
     }
 
-    // Cancels any observed values to be emitted and written to the writable BLE-characteristic
+    /**
+     * Cancels any observed value-stream that is writing to a BLE characteristic.
+     *
+     * See also the [BleService.set] that take an Observable as the last parameter.
+     */
     operator
-    fun <Val : Any> minusAssign(key: KMutableProperty1<Svc, BleCharValue<Val>>) {
-        unsubscribeWrite(key.name)
+    fun <Val : Any> minusAssign(property: KMutableProperty1<Svc, BleCharValue<Val>>) {
+        unsubscribeWrite(property.name)
     }
 
     private fun unsubscribeWrite(propertyName: String) {
@@ -82,28 +113,55 @@ open class BleService<Svc : BleService<Svc>> {
     private fun asSvc() = this as Svc
 }
 
-// Represents a BLE-characteristic that can handle (read/write) a value of type <Val>
-// Instance of this class should be the properties of a BleService sub-class
+/**
+ * Each [BleService]'s property that represents a BLE Service's characteristic and needs to be configured by
+ * the [BleIdiomDSL] must be of this type.
+ */
 class BleCharValue<Val : Any>() {
     internal var value: Val? = null
     internal var readAction: () -> Observable<Val> = { Observable.empty() }
     internal var writeAction: () -> Observable<Val> = { Observable.empty() }
 
+    /**
+     * Creates a new BLE characteristic property-value.
+     * @param value The new value for this property.
+     */
     constructor(value: Val) : this() {
         this.value = value
     }
 
+    /**
+     * Reads a value from the remote BLE characteristic and returns an Observable.
+     * @return An [Observable] that will emit the read value upon success.
+     */
     fun read() = readAction()
 
+    /**
+     * Write this value to the remote BLE characteristic and returns an Observable.
+     * @return An [Observable] that will complete upon success.
+     * Depending upon the remote BLE characteristic, it may emit a value as well.
+     */
     fun write() = writeAction()
 }
 
-// Functions to create BleCharHandlerDSL instances that handle the ble BLE input/output.
+/**
+ * @return a [BleCharHandlerDSL] delegate that will handle the communication with a remote BLE characteristic
+ * for values of type [Val].
+ */
 inline
 fun <reified Val : Any> bleCharHandler(): BleCharHandlerDSL<Val> = bleCharHandler { forClass = Val::class }
 
+/**
+ * @param body The code-block configuring the [ByteArray] transformations to and from value of type [Val].
+ * @return a [BleCharHandlerDSL] delegate that will handle the communication with a remote BLE characteristic
+ * for value of type [Val], where the [ByteArray] transformations are configured by the given code-block.
+ */
 fun <Val : Any> bleCharHandler(body: BleCharHandlerDSL<Val>.() -> Unit): BleCharHandlerDSL<Val> = BleCharValueDelegate(body)
 
-
+/**
+ * Helper function that creates a [BleCharValue] from the receiver.
+ * @receiver The value from which the [BleCharValue] will be created.
+ * @return The [BleCharValue] representing this receiver.
+ */
 inline infix
-fun <reified T : Any> T.asRawBleValue(transform: T.() -> ByteArray) = BleCharValue<ByteArray>(this.transform())
+fun <reified Val : Any> Val.asRawBleValue(transform: Val.() -> ByteArray) = BleCharValue(transform())
