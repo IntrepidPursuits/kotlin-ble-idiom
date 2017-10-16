@@ -13,29 +13,28 @@ import kotlin.reflect.full.primaryConstructor
  */
 @Suppress("ClassName")
 object configureBleService : BleIdiomDSL {
+    private val registration = BleServiceDSLImpl.Registration
 
     infix
-    override fun forClass(bleServiceClass: KClass<out BleService<*>>) = WithConfiguration(bleServiceClass)
+    override fun <Svc : BleService<Svc>> forClass(bleServiceClass: KClass<Svc>) = WithConfiguration<Svc>(bleServiceClass)
 
-    class WithConfiguration(private val bleServiceClass: KClass<out BleService<*>>) : BleIdiomDSL.ForClassWith {
+    class WithConfiguration<Svc>(private val bleServiceClass: KClass<out BleService<*>>) : BleIdiomDSL.ForClassWith<Svc> {
 
         infix
-        override fun with(dsl: BleServiceDSL.() -> Unit) {
-            BleServiceDSLImpl.Registration.registerDSL(bleServiceClass) {
-                BleServiceDSLImpl().apply {
-                    dsl()
-                }
+        override fun with(dsl: BleServiceDSL<Svc>.() -> Unit) = registration.registerDSL(bleServiceClass) {
+            BleServiceDSLImpl<Svc>().apply {
+                dsl()
             }
         }
     }
 }
 
-internal class BleServiceDSLImpl : BleServiceDSL {
+internal class BleServiceDSLImpl<Svc> : BleServiceDSL<Svc> {
     internal object Registration {
-        private val registeredDSLs: MutableMap<Int, BleServiceDSLImpl> = mutableMapOf()
+        private val registeredDSLs: MutableMap<Int, BleServiceDSLImpl<*>> = mutableMapOf()
         private val registeredServices: MutableMap<String, KClass<out BleService<*>>> = mutableMapOf()
 
-        internal fun registerDSL(bleServiceClass: KClass<out BleService<*>>, createServiceDSL: () -> BleServiceDSLImpl) {
+        internal fun registerDSL(bleServiceClass: KClass<out BleService<*>>, createServiceDSL: () -> BleServiceDSLImpl<*>) {
             val key = bleServiceClass.hashCode()
             if (key !in registeredDSLs) {
                 val serviceDSL = createServiceDSL()
@@ -53,45 +52,45 @@ internal class BleServiceDSLImpl : BleServiceDSL {
     lateinit
     override var uuid: String
 
-    private val readDSL: BleServiceReadDSL = object : BleServiceReadDSL {
-        override val data: ReadableCharDSL
-            get() = object : ReadableCharDSL {
-                override fun from(uuid: String): ReadableCharBuilder = this@BleServiceDSLImpl.from(uuid)
-                override fun <Svc : BleService<Svc>> into(property: KProperty1<Svc, BleCharValue<*>>) = this@BleServiceDSLImpl.into(property)
+    private val readDSL = object : BleServiceReadDSL<Svc> {
+        override val data: ReadableCharDSL<Svc>
+            get() = object : ReadableCharDSL<Svc> {
+                override fun from(uuid: String) = this@BleServiceDSLImpl.from(uuid)
+                override fun into(property: KProperty1<Svc, BleCharValue<*>>) = this@BleServiceDSLImpl.into(property)
             }
     }
 
-    private val writeDSL: BleServiceWriteDSL = object : BleServiceWriteDSL {
-        override val data: WritableCharDSL
-            get() = object : WritableCharDSL {
-                override fun <Svc : BleService<Svc>> from(property: KMutableProperty1<Svc, out BleCharValue<*>>) = this@BleServiceDSLImpl.from(property)
-                override fun into(uuid: String): WritableCharBuilder = this@BleServiceDSLImpl.into(uuid)
+    private val writeDSL = object : BleServiceWriteDSL<Svc> {
+        override val data: WritableCharDSL<Svc>
+            get() = object : WritableCharDSL<Svc> {
+                override fun from(property: KMutableProperty1<Svc, out BleCharValue<*>>) = this@BleServiceDSLImpl.from(property)
+                override fun into(uuid: String) = this@BleServiceDSLImpl.into(uuid)
             }
     }
 
     internal val readCharacteristicsMap: MutableMap<String, String> = mutableMapOf()
     internal val writeCharacteristicsMap: MutableMap<String, String> = mutableMapOf()
 
-    override fun read(dsl: BleServiceReadDSL.() -> Unit) = readDSL.dsl()
+    override fun read(dsl: BleServiceReadDSL<Svc>.() -> Unit) = readDSL.dsl()
 
-    override fun write(dsl: BleServiceWriteDSL.() -> Unit) = writeDSL.dsl()
+    override fun write(dsl: BleServiceWriteDSL<Svc>.() -> Unit) = writeDSL.dsl()
 
-    private fun from(uuid: String) = ReadableCharBuilder(this).apply {
+    private fun from(uuid: String) = ReadableCharBuilder<Svc>(this).apply {
         charUUID = fixCharUUID(uuid)
         buildIfReady(readCharacteristicsMap)
     }
 
-    private fun into(property: KCallable<*>) = ReadableCharBuilder(this).apply {
+    private fun into(property: KCallable<*>) = ReadableCharBuilder<Svc>(this).apply {
         prop = property
         buildIfReady(readCharacteristicsMap)
     }
 
-    private fun from(property: KCallable<*>) = WritableCharBuilder(this).apply {
+    private fun from(property: KCallable<*>) = WritableCharBuilder<Svc>(this).apply {
         prop = property
         buildIfReady(writeCharacteristicsMap)
     }
 
-    private fun into(uuid: String) = WritableCharBuilder(this).apply {
+    private fun into(uuid: String) = WritableCharBuilder<Svc>(this).apply {
         charUUID = fixCharUUID(uuid)
         buildIfReady(writeCharacteristicsMap)
     }
@@ -155,7 +154,7 @@ internal class BleCharValueDelegate<Val : Any>() : BleCharHandlerDSL<Val> {
 /**
  * Builds a BLE-characteristic, ties a BleCharValue property to a characteristic-UUID.
  */
-private abstract class CharBuilder(protected val service: BleServiceDSLImpl) {
+private abstract class CharBuilder(protected val service: BleServiceDSLImpl<*>) {
     internal var prop: KCallable<*>? = null
     internal var charUUID: String? = null
 
@@ -173,7 +172,7 @@ private abstract class CharBuilder(protected val service: BleServiceDSLImpl) {
 /**
  * Builds a readable BLE-characteristic, ties a BleCharValue property to a 'read' characteristic-UUID.
  */
-private class ReadableCharBuilder(service: BleServiceDSLImpl) : CharBuilder(service), ReadableCharDSL {
+private class ReadableCharBuilder<Svc>(service: BleServiceDSLImpl<*>) : CharBuilder(service), ReadableCharDSL<Svc> {
     infix
     override fun from(uuid: String) = apply {
         charUUID = fixCharUUID(uuid)
@@ -181,7 +180,7 @@ private class ReadableCharBuilder(service: BleServiceDSLImpl) : CharBuilder(serv
     }
 
     infix
-    override fun <Svc : BleService<Svc>> into(property: KProperty1<Svc, BleCharValue<*>>) = apply {
+    override fun into(property: KProperty1<Svc, BleCharValue<*>>) = apply {
         prop = property
         buildIfReady(service.readCharacteristicsMap)
     }
@@ -190,9 +189,9 @@ private class ReadableCharBuilder(service: BleServiceDSLImpl) : CharBuilder(serv
 /**
  * Builds a writable BLE-characteristic, ties a mutable BleCharValue property to a 'write' characteristic-UUID.
  */
-private class WritableCharBuilder(service: BleServiceDSLImpl) : CharBuilder(service), WritableCharDSL {
+private class WritableCharBuilder<Svc>(service: BleServiceDSLImpl<*>) : CharBuilder(service), WritableCharDSL<Svc> {
     infix
-    override fun <Svc : BleService<Svc>> from(property: KMutableProperty1<Svc, out BleCharValue<*>>) = apply {
+    override fun from(property: KMutableProperty1<Svc, out BleCharValue<*>>) = apply {
         prop = property
         buildIfReady(service.writeCharacteristicsMap)
     }

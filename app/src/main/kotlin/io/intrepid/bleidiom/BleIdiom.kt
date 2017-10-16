@@ -14,9 +14,9 @@ interface BleIdiomDSL {
      * @param bleServiceClass The target [BleService] subclass
      */
     infix
-    fun forClass(bleServiceClass: KClass<out BleService<*>>): ForClassWith
+    fun <Svc : BleService<Svc>> forClass(bleServiceClass: KClass<Svc>): ForClassWith<Svc>
 
-    interface ForClassWith {
+    interface ForClassWith<Svc> {
         /**
          * Registers the target [BleService] subclass,
          * then creates a new [BleServiceDSL]
@@ -24,14 +24,14 @@ interface BleIdiomDSL {
          * @param dsl The dsl configuration *with* which the registered [BleService] is configured.
          */
         infix
-        fun with(dsl: BleServiceDSL.() -> Unit)
+        fun with(dsl: BleServiceDSL<Svc>.() -> Unit)
     }
 }
 
 /**
  * Defines the DSL of the targeted [BleService].
  */
-interface BleServiceDSL {
+interface BleServiceDSL<Svc> {
     /**
      * The UUID of the BLE **Service**
      */
@@ -41,45 +41,45 @@ interface BleServiceDSL {
      * Starts the definition of the readable BLE characteristics.
      * @param dsl The block of code that configures the readable BLE characteristics for the targeted [BleService].
      */
-    fun read(dsl: BleServiceReadDSL.() -> Unit)
+    fun read(dsl: BleServiceReadDSL<Svc>.() -> Unit)
 
     /**
      * Starts the definition of the writable BLE characteristics.
      * @param dsl The block of code that configures the writable BLE characteristics for the targeted [BleService].
      */
-    fun write(dsl: BleServiceWriteDSL.() -> Unit)
+    fun write(dsl: BleServiceWriteDSL<Svc>.() -> Unit)
 }
 
 /**
  * Defines readable BLE characteristics.
  */
-interface BleServiceReadDSL {
+interface BleServiceReadDSL<Svc> {
     /**
      * 'data' keyword to make the DSL more legible.
      */
-    val data: ReadableCharDSL
+    val data: ReadableCharDSL<Svc>
 }
 
 /**
  * Defines writable BLE characteristics.
  */
-interface BleServiceWriteDSL {
+interface BleServiceWriteDSL<Svc> {
     /**
      * 'data' keyword to make the DSL more legible.
      */
-    val data: WritableCharDSL
+    val data: WritableCharDSL<Svc>
 }
 
 /**
  * Ties a readable BLE characteristic (its UUID) to a [BleService]'s property.
  */
-interface ReadableCharDSL {
+interface ReadableCharDSL<Svc> {
     /**
      * Defines a remote BLE characteristic from which a value can be read.
      * @param uuid The UUID representing the remote BLE characteristic.
      */
     infix
-    fun from(uuid: String): ReadableCharDSL
+    fun from(uuid: String): ReadableCharDSL<Svc>
 
     /**
      * Defines which [BleService]'s property represents this readable BLE characteristic
@@ -87,27 +87,27 @@ interface ReadableCharDSL {
      * @param property The readable [Svc] property to be tied to this readable BLE characteristic.
      */
     infix
-    fun <Svc : BleService<Svc>> into(property: KProperty1<Svc, BleCharValue<*>>): ReadableCharDSL
+    fun into(property: KProperty1<Svc, BleCharValue<*>>): ReadableCharDSL<Svc>
 }
 
 /**
  * Ties a writable BLE characteristic (its UUID) to a [BleService]'s property.
  */
-interface WritableCharDSL {
+interface WritableCharDSL<Svc> {
     /**
      * Defines which [BleService]'s property represents this writable BLE characteristic,
      * that can be assigned/changed by Kotlin code.
      * @param property The writable [Svc] property to be tied to this writable BLE characteristic.
      */
     infix
-    fun <Svc : BleService<Svc>> from(property: KMutableProperty1<Svc, out BleCharValue<*>>): WritableCharDSL
+    fun from(property: KMutableProperty1<Svc, out BleCharValue<*>>): WritableCharDSL<Svc>
 
     /**
      * Defines a remote BLE characteristic that can be written to.
      * @param uuid The UUID representing the remote BLE characteristic.
      */
     infix
-    fun into(uuid: String): WritableCharDSL
+    fun into(uuid: String): WritableCharDSL<Svc>
 }
 
 /**

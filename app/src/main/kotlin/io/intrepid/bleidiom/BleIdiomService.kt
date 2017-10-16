@@ -15,7 +15,7 @@ import kotlin.reflect.KProperty1
  * @sample io.intrepid.bleidiom.app.BatterijService
  */
 open class BleService<Svc : BleService<Svc>> {
-    internal val serviceDSL: BleServiceDSLImpl by lazy {
+    internal val serviceDSL: BleServiceDSLImpl<*> by lazy {
         BleServiceDSLImpl.Registration.getServiceDSL(this)!!
     }
 
