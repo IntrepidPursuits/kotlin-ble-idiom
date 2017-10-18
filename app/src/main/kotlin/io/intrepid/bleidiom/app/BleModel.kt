@@ -14,12 +14,12 @@ fun defineBleServices() {
         uuid = "790a4cfa-4058-4922-93f6-d9a5e168cc60"
 
         read {
-            data from "3a19" into BatterijService::percentage
+            data from "3a19" into { this::percentage }
             data into BatterijService::name from "3a00"
         }
 
         write {
-            data into "3a00" from BatterijService::name
+            data into "3a00" from { this::name }
         }
     }
 }

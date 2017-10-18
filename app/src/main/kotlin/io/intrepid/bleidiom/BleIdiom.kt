@@ -1,9 +1,6 @@
 package io.intrepid.bleidiom
 
-import kotlin.reflect.KClass
-import kotlin.reflect.KMutableProperty1
-import kotlin.reflect.KProperty
-import kotlin.reflect.KProperty1
+import kotlin.reflect.*
 
 /**
  * Marks the start of a new BLE service definition.
@@ -88,6 +85,14 @@ interface ReadableCharDSL<Svc> {
      */
     infix
     fun into(property: KProperty1<Svc, BleCharValue<*>>): ReadableCharDSL<Svc>
+
+    /**
+     * Defines which [BleService]'s property represents this readable BLE characteristic
+     * that can be read by Kotlin code.
+     * @param propertyGet Lambda that must return a [Svc] property to be tied to this readable BLE characteristic.
+     */
+    infix
+    fun into(propertyGet: Svc.() -> KProperty0<BleCharValue<*>>): ReadableCharDSL<Svc>
 }
 
 /**
@@ -101,6 +106,14 @@ interface WritableCharDSL<Svc> {
      */
     infix
     fun from(property: KMutableProperty1<Svc, out BleCharValue<*>>): WritableCharDSL<Svc>
+
+    /**
+     * Defines which [BleService]'s property represents this writable BLE characteristic,
+     * that can be assigned/changed by Kotlin code.
+     * @param propertyGet Lambdat that must return the writable [Svc] property to be tied to this writable BLE characteristic.
+     */
+    infix
+    fun from(propertyGet: Svc.() -> KMutableProperty0<out BleCharValue<*>>): WritableCharDSL<Svc>
 
     /**
      * Defines a remote BLE characteristic that can be written to.
