@@ -1,4 +1,6 @@
 /**
+ * Copyright (c) 2017 Intrepid Pursuits, LLC
+ *
  * Functions to translate numbers, strings and other common types into byte-arrays and vice versa.
  */
 package io.intrepid.bleidiom

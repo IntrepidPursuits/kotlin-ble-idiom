@@ -1,3 +1,6 @@
+/**
+ * Copyright (c) 2017 Intrepid Pursuits, LLC
+ */
 package io.intrepid.bleidiom.app
 
 import io.intrepid.bleidiom.*
