@@ -3,7 +3,7 @@ apply plugin: 'kotlin-android'
 
 android {
     compileSdkVersion 25
-    buildToolsVersion "25.0.2"
+    buildToolsVersion "26.0.2"
 
     defaultConfig {
         applicationId "io.intrepid.kotlinguists.bleidiom"
@@ -27,37 +27,15 @@ android {
     }
 }
 
-afterEvaluate {
-    android.sourceSets.all { sourceSet ->
-        if (!sourceSet.name.startsWith("test")) {
-            sourceSet.kotlin.setSrcDirs([])
-        }
-    }
-}
-
 dependencies {
-    compile fileTree(dir: 'libs', include: ['*.jar'])
-    compile "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
-    compile "org.jetbrains.kotlin:kotlin-reflect:$kotlin_version"
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+    implementation "org.jetbrains.kotlin:kotlin-reflect:$kotlin_version"
 
-    compile 'com.android.support:appcompat-v7:25.3.1'
-    compile 'com.polidea.rxandroidble:rxandroidble:1.4.1'
-    compile 'io.reactivex:rxandroid:1.2.1'
-    compile 'io.reactivex:rxkotlin:1.0.0'
-    compile 'com.android.support.constraint:constraint-layout:1.0.2'
-    compile 'com.android.support:design:25.3.1'
-}
-
-buildscript {
-    ext.kotlin_version = '1.1.51'
-    repositories {
-        mavenCentral()
-    }
-    dependencies {
-        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
-    }
-}
-
-repositories {
-    mavenCentral()
+    implementation 'com.android.support:appcompat-v7:25.4.0'
+    implementation 'com.polidea.rxandroidble:rxandroidble:1.4.1'
+    implementation 'io.reactivex:rxandroid:1.2.1'
+    implementation 'io.reactivex:rxkotlin:1.0.0'
+    implementation 'com.android.support.constraint:constraint-layout:1.0.2'
+    implementation 'com.android.support:design:25.4.0'
 }
