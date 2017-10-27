@@ -10,7 +10,9 @@ import io.intrepid.bleidiom.*
  * For now, that is just the [BatterijService]
  */
 fun defineBleServices() {
+    // There are two ways of defining/configuring BLE services.
 
+    // 1. Start DSL with the 'configureBleService' keyword (object).
     // The percentage (0x3a19) and name (0x3a00) are readable BLE characteristics
     // The name (0x3a00) is a writable BLE characteristic.
     configureBleService forClass BatterijService::class with {
@@ -18,11 +20,26 @@ fun defineBleServices() {
 
         read {
             data from "3a19" into { ::percentage }
-            data into BatterijService::name from "3a00"
         }
 
-        write {
-            data into "3a00" from { ::name }
+        readAndWrite {
+            data between { ::name } and "3a00"
+            //data between BatterijService::name and "3a00"
+        }
+    }
+
+    // 2. Start DSL with the BleService's companion object.
+    // This is a User Data service.
+    // https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.service.user_data.xml
+    BleService<UserDataService> {
+        configure {
+            uuid = "181C"
+
+            readAndWrite {
+                data between "2A8A" and ::firstName
+                data between "2A90" and ::lastName
+                data between "2A87" and ::emailAddress
+            }
         }
     }
 }
@@ -48,4 +65,13 @@ class BatterijService : BleService<BatterijService>() {
      * [BleCharHandlerDSL.fromByteArray] and [BleCharHandlerDSL.toByteArray] based on the [BleCharValue]'s **Val** type.
      */
     var name: BleCharValue<String> by bleCharHandler()
+}
+
+/**
+ * Instances of this class represent a User Data Service of a BLE device.
+ */
+class UserDataService : BleService<UserDataService>() {
+    var firstName: BleCharValue<String> by bleCharHandler()
+    var lastName: BleCharValue<String> by bleCharHandler()
+    var emailAddress: BleCharValue<String> by bleCharHandler()
 }

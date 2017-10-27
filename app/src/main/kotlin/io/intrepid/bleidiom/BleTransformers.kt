@@ -10,7 +10,13 @@ import java.nio.ByteBuffer
 import java.nio.charset.Charset
 import kotlin.reflect.KClass
 
+internal val TO_LONG_SVC_UUID = { shortUUID: String -> "F000${shortUUID}-0451-4000-B000-000000000000" }
 internal val TO_LONG_CHAR_UUID = { shortUUID: String -> "0000${shortUUID}-0000-1000-8000-00805F9B34FB" }
+
+fun fixSvcUUID(uuid: String) = when (uuid.length) {
+    4 -> TO_LONG_SVC_UUID(uuid)
+    else -> uuid
+}
 
 fun fixCharUUID(uuid: String) = when (uuid.length) {
     4 -> TO_LONG_CHAR_UUID(uuid)

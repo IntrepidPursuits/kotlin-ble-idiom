@@ -16,7 +16,7 @@ import rx.lang.kotlin.toObservable
  * registered and configured by the [configureBleService].
  */
 class BleScanner(private val bleClient: RxBleClient) {
-    private val registration = BleServiceDSLImpl.Registration
+    private val registration = Registration
 
     /**
      * Starts scanning of BLE devices that implement the given [BleService].

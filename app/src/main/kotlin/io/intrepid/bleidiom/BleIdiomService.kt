@@ -10,6 +10,7 @@ import rx.Subscription
 import rx.lang.kotlin.subscribeBy
 import kotlin.reflect.KMutableProperty1
 import kotlin.reflect.KProperty1
+import kotlin.reflect.full.primaryConstructor
 
 /**
  * The subclass of every BLE Service that can be configured and registered by the [BleIdiomDSL].
@@ -17,15 +18,33 @@ import kotlin.reflect.KProperty1
  * [Svc] is the subclass itself.
  * @sample io.intrepid.bleidiom.app.BatterijService
  */
-open class BleService<Svc : BleService<Svc>> {
+open class BleService<Svc : BleService<Svc>> : BleConfigureDSL<Svc> {
+    companion object {
+        /**
+         * The 'invoke' operator allows the start of the DSL that configures this
+         * BleService. See also [BleConfigureDSL.configure]
+         */
+        inline operator
+        fun <reified T : BleService<T>> invoke(dsl: T.() -> Unit) = createPrototype<T>().dsl()
+
+        inline
+        fun <reified T : BleService<T>> createPrototype() = T::class.primaryConstructor!!.call()
+    }
+
     internal val dsl: BleServiceDSLImpl<*> by lazy {
-        BleServiceDSLImpl.Registration.getServiceDSL(this)!!
+        Registration.getServiceDSL(this)!!
     }
 
     internal var device: RxBleDevice? = null
     internal var connection: RxBleConnection? = null
 
     private val writeSubscriptions: MutableMap<String, Subscription> = mutableMapOf()
+
+    override final fun configure(dsl: BleServiceDSL<Svc>.() -> Unit) = Registration.registerDSL(this::class) {
+        BleServiceDSLImpl(asSvc()).apply {
+            dsl()
+        }
+    }
 
     /**
      * Connects to the device that contains this service.
