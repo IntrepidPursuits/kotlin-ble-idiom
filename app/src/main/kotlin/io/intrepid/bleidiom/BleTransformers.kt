@@ -5,12 +5,21 @@
  */
 package io.intrepid.bleidiom
 
+import hu.akarnokd.rxjava.interop.RxJavaInterop
+import io.reactivex.BackpressureStrategy
+import io.reactivex.Observable
 import java.math.BigInteger
 import java.nio.ByteBuffer
 import java.nio.charset.Charset
 import kotlin.reflect.KClass
 
+internal val TO_LONG_SVC_UUID = { shortUUID: String -> "F000${shortUUID}-0451-4000-B000-000000000000" }
 internal val TO_LONG_CHAR_UUID = { shortUUID: String -> "0000${shortUUID}-0000-1000-8000-00805F9B34FB" }
+
+fun fixSvcUUID(uuid: String) = when (uuid.length) {
+    4 -> TO_LONG_SVC_UUID(uuid)
+    else -> uuid
+}
 
 fun fixCharUUID(uuid: String) = when (uuid.length) {
     4 -> TO_LONG_CHAR_UUID(uuid)
@@ -78,3 +87,34 @@ internal fun <T> fromByteArrayTransformer(kclass: KClass<out Any>): (ByteArray) 
     ByteArray::class -> { value -> value as T }
     else -> throw Exception("Unknown fromByteArrayTransformer class conversion for $kclass")
 }
+
+fun <A, R> letMany(a: A?, block: (A) -> R) =
+        if (a != null) block(a) else null
+
+fun <A, B, R> letMany(a: A?, b: B?, block: (A, B) -> R) =
+        if (a != null && b != null) block(a, b) else null
+
+fun <A, B, C, R> letMany(a: A?, b: B?, c: C?, block: (A, B, C) -> R) =
+        if (a != null && b != null && c != null) block(a, b, c) else null
+
+fun <A, B, C, D, R> letMany(a: A?, b: B?, c: C?, d: D?, block: (A, B, C, D) -> R) =
+        if (a != null && b != null && c != null && d != null) block(a, b, c, d) else null
+
+fun <A, B, C, D, E, R> letMany(a: A?, b: B?, c: C?, d: D?, e: E?, block: (A, B, C, D, E) -> R) =
+        if (a != null && b != null && c != null && d != null && e != null) block(a, b, c, d, e) else null
+
+internal fun <T> rx.Observable<T>.toRx2Observable() = RxJavaInterop.toV2Observable(this)
+internal fun <T> Observable<T>.toRx1Observable() = RxJavaInterop.toV1Observable(this, BackpressureStrategy.LATEST)
+
+operator fun Observable<Int>.plus(number: Int) = this.map { it + number }!!
+operator fun Observable<Int>.minus(number: Int) = this.map { it - number }!!
+operator fun Observable<Int>.rem(number: Int) = this.map { it % number }!!
+operator fun Observable<Int>.times(number: Int) = this.map { it * number }!!
+operator fun Observable<Int>.div(number: Int) = this.map { it / number }!!
+operator fun Int.plus(obs: Observable<Int>) = obs.map { this + it }!!
+operator fun Int.minus(obs: Observable<Int>) = obs.map { this - it }!!
+operator fun Int.rem(obs: Observable<Int>) = obs.map { this % it }!!
+operator fun Int.times(obs: Observable<Int>) = obs.map { this * it }!!
+operator fun Int.div(obs: Observable<Int>) = obs.map { this / it }!!
+operator fun Observable<ByteArray>.get(index: Int) = this.map { array -> array[index].toInt() }!!
+fun Observable<*>.asString() = this.map { it -> it.toString() }!!

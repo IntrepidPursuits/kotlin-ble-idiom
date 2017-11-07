@@ -10,19 +10,39 @@ import io.intrepid.bleidiom.*
  * For now, that is just the [BatterijService]
  */
 fun defineBleServices() {
+    // There are two ways of defining/configuring BLE services.
 
+    // 1. Start DSL with the 'configureBleService' keyword (object).
     // The percentage (0x3a19) and name (0x3a00) are readable BLE characteristics
     // The name (0x3a00) is a writable BLE characteristic.
     configureBleService forClass BatterijService::class with {
         uuid = "790a4cfa-4058-4922-93f6-d9a5e168cc60"
 
         read {
-            data from "3a19" into { this::percentage }
-            data into BatterijService::name from "3a00"
+            data from "3a19" into { ::percentage }
         }
 
-        write {
-            data into "3a00" from { this::name }
+        readAndWrite {
+            data between { ::name } and "3a00"
+            //data between BatterijService::name and "3a00"
+        }
+    }
+
+    // 2. Start DSL with the BleService's companion object.
+    // This is a User Data service.
+    // https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.service.user_data.xml
+    BleService<UserDataService> {
+        configure {
+            uuid = "181C"
+
+            read {
+                data from "0010" into ::count
+            }
+            readAndWrite {
+                data between "2A8A" and ::firstName
+                data between "2A90" and ::lastName
+                data between "2A87" and ::emailAddress
+            }
         }
     }
 }
@@ -48,4 +68,14 @@ class BatterijService : BleService<BatterijService>() {
      * [BleCharHandlerDSL.fromByteArray] and [BleCharHandlerDSL.toByteArray] based on the [BleCharValue]'s **Val** type.
      */
     var name: BleCharValue<String> by bleCharHandler()
+}
+
+/**
+ * Instances of this class represent a User Data Service of a BLE device.
+ */
+class UserDataService : BleService<UserDataService>() {
+    var firstName: BleCharValue<String> by bleCharHandler()
+    var lastName: BleCharValue<String> by bleCharHandler()
+    var emailAddress: BleCharValue<String> by bleCharHandler()
+    val count: BleCharValue<Int> by bleCharHandler()
 }

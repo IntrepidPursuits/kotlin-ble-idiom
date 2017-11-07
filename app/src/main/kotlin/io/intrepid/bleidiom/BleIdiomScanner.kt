@@ -7,16 +7,26 @@ import com.polidea.rxandroidble.RxBleClient
 import com.polidea.rxandroidble.RxBleDevice
 import com.polidea.rxandroidble.scan.ScanResult
 import com.polidea.rxandroidble.scan.ScanSettings
-import rx.Observable
-import rx.lang.kotlin.ofType
-import rx.lang.kotlin.toObservable
+import io.reactivex.Observable
+import io.reactivex.rxkotlin.ofType
+import io.reactivex.rxkotlin.toObservable
+import java.util.*
+
+open class ServiceDeviceFactory {
+    companion object {
+        internal val registration = Registration
+
+        @Suppress("UNCHECKED_CAST")
+        fun <Svc : BleService<*>> createClientDevice(uuid: UUID, bleDevice: RxBleDevice): Svc =
+                registration.createService(uuid)!!.apply { device = bleDevice } as Svc
+    }
+}
 
 /**
  * Scans for BLE devices that implement BLE Services that were
  * registered and configured by the [configureBleService].
  */
-class BleScanner(private val bleClient: RxBleClient) {
-    private val registration = BleServiceDSLImpl.Registration
+class BleScanner(private val bleClient: RxBleClient) : ServiceDeviceFactory() {
 
     /**
      * Starts scanning of BLE devices that implement the given [BleService].
@@ -31,7 +41,7 @@ class BleScanner(private val bleClient: RxBleClient) {
      * @return an [Observable] of [BleService] instances.
      */
     inline
-    fun <reified T : BleService<T>> scanForService(): Observable<T> = scanForServices().ofType()
+    fun <reified T : BleService<T>> scanForService() = scanForServices().ofType<T>()
 
     /**
      * Starts scanning of BLE devices that implement any registered and configured [BleService].
@@ -46,7 +56,7 @@ class BleScanner(private val bleClient: RxBleClient) {
      */
     fun scanForServices(): Observable<out BleService<*>> {
         val settings: ScanSettings = ScanSettings.Builder().build()
-        return bleClient.scanBleDevices(settings).flatMap { scanResult -> createScannedDevice(scanResult) }
+        return bleClient.scanBleDevices(settings).toRx2Observable().flatMap { scanResult -> createScannedDevice(scanResult) }
     }
 
     private fun createScannedDevice(scanResult: ScanResult): Observable<BleService<*>> {
@@ -55,14 +65,9 @@ class BleScanner(private val bleClient: RxBleClient) {
 
         @Suppress("IfThenToElvis")
         return if (serviceUuids != null) serviceUuids.toObservable()
-                .map { uuid -> uuid.uuid.toString() }
+                .map { uuid -> uuid.uuid }
                 .filter { uuid -> registration.hasService(uuid) }
-                .map { uuid -> createRegisteredServiceInstance(uuid, scannedDevice) }
+                .map { uuid -> createClientDevice<BleService<*>>(uuid, scannedDevice) }
         else Observable.empty()
     }
-
-    private fun createRegisteredServiceInstance(uuid: String, bleDevice: RxBleDevice) =
-            registration.createService(uuid)!!.apply {
-                device = bleDevice
-            }
 }

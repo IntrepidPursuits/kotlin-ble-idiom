@@ -26,6 +26,18 @@ interface BleIdiomDSL {
         infix
         fun with(dsl: BleServiceDSL<Svc>.() -> Unit)
     }
+
+    /**
+     * Clears all configure BLE service definitions.
+     */
+    fun clearConfigurations()
+}
+
+/**
+ * Marks the configuration start of a new BLE service definition.
+ */
+interface BleConfigureDSL<Svc : BleService<Svc>> {
+    fun configure(dsl: BleServiceDSL<Svc>.() -> Unit)
 }
 
 /**
@@ -48,6 +60,12 @@ interface BleServiceDSL<Svc> {
      * @param dsl The block of code that configures the writable BLE characteristics for the targeted [BleService].
      */
     fun write(dsl: BleServiceWriteDSL<Svc>.() -> Unit)
+
+    /**
+     * Starts the definition of the readable and writable BLE characteristics.
+     * @param dsl The block of code that configures the BLE characteristics for the targeted [BleService].
+     */
+    fun readAndWrite(dsl: BleServiceReadWriteDSL<Svc>.() -> Unit)
 }
 
 /**
@@ -71,9 +89,26 @@ interface BleServiceWriteDSL<Svc> {
 }
 
 /**
+ * Defines readable and writable BLE characteristics.
+ */
+interface BleServiceReadWriteDSL<Svc> {
+    /**
+     * 'data' keyword to make the DSL more legible.
+     */
+    val data: ReadAndWriteCharDSL<Svc>
+}
+
+/**
+ * Basis of both the readable and writable character DSLs.
+ */
+interface CharDSL<out Svc> {
+    val prototype: Svc
+}
+
+/**
  * Ties a readable BLE characteristic (its UUID) to a [BleService]'s property.
  */
-interface ReadableCharDSL<Svc> {
+interface ReadableCharDSL<Svc> : CharDSL<Svc> {
     /**
      * Defines a remote BLE characteristic from which a value can be read.
      * @param uuid The UUID representing the remote BLE characteristic.
@@ -92,16 +127,24 @@ interface ReadableCharDSL<Svc> {
     /**
      * Defines which [BleService]'s property represents this readable BLE characteristic
      * that can be read by Kotlin code.
+     * @param property The readable [Svc] property to be tied to this readable BLE characteristic.
+     */
+    infix
+    fun into(property: KProperty0<BleCharValue<*>>): ReadableCharDSL<Svc>
+
+    /**
+     * Defines which [BleService]'s property represents this readable BLE characteristic
+     * that can be read by Kotlin code.
      * @param propertyGet Lambda that must return a [Svc] property to be tied to this readable BLE characteristic.
      */
     infix
-    fun into(propertyGet: Svc.() -> KProperty0<BleCharValue<*>>): ReadableCharDSL<Svc>
+    fun into(propertyGet: Svc.() -> KProperty0<BleCharValue<*>>) = into(prototype.propertyGet())
 }
 
 /**
  * Ties a writable BLE characteristic (its UUID) to a [BleService]'s property.
  */
-interface WritableCharDSL<Svc> {
+interface WritableCharDSL<Svc> : CharDSL<Svc> {
     /**
      * Defines which [BleService]'s property represents this writable BLE characteristic,
      * that can be assigned/changed by Kotlin code.
@@ -113,10 +156,18 @@ interface WritableCharDSL<Svc> {
     /**
      * Defines which [BleService]'s property represents this writable BLE characteristic,
      * that can be assigned/changed by Kotlin code.
+     * @param property The writable [Svc] property to be tied to this writable BLE characteristic.
+     */
+    infix
+    fun from(property: KMutableProperty0<out BleCharValue<*>>): WritableCharDSL<Svc>
+
+    /**
+     * Defines which [BleService]'s property represents this writable BLE characteristic,
+     * that can be assigned/changed by Kotlin code.
      * @param propertyGet Lambdat that must return the writable [Svc] property to be tied to this writable BLE characteristic.
      */
     infix
-    fun from(propertyGet: Svc.() -> KMutableProperty0<out BleCharValue<*>>): WritableCharDSL<Svc>
+    fun from(propertyGet: Svc.() -> KMutableProperty0<out BleCharValue<*>>) = from(prototype.propertyGet())
 
     /**
      * Defines a remote BLE characteristic that can be written to.
@@ -124,6 +175,33 @@ interface WritableCharDSL<Svc> {
      */
     infix
     fun into(uuid: String): WritableCharDSL<Svc>
+}
+
+/**
+ * Ties a read/write BLE characteristic (its UUID) to a [BleService]'s property.
+ */
+interface ReadAndWriteCharDSL<Svc> : CharDSL<Svc> {
+    infix fun between(uuid: String): AndPropDSL<Svc>
+
+    infix fun between(property: KMutableProperty1<Svc, out BleCharValue<*>>): AndStringDSL
+
+    infix fun between(property: KMutableProperty0<out BleCharValue<*>>): AndStringDSL
+
+    infix fun between(propertyGet: Svc.() -> KMutableProperty0<out BleCharValue<*>>) =
+            between(prototype.propertyGet())
+
+    interface AndStringDSL {
+        infix fun and(uuid: String)
+    }
+
+    interface AndPropDSL<Svc> : CharDSL<Svc> {
+        infix fun and(property: KMutableProperty1<Svc, out BleCharValue<*>>)
+
+        infix fun and(property: KMutableProperty0<out BleCharValue<*>>)
+
+        infix fun and(propertyGet: Svc.() -> KMutableProperty0<out BleCharValue<*>>) =
+                and(prototype.propertyGet())
+    }
 }
 
 /**

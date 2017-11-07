@@ -14,10 +14,10 @@ import com.polidea.rxandroidble.RxBleClient
 import com.polidea.rxandroidble.internal.RxBleLog
 import io.intrepid.bleidiom.BleScanner
 import io.intrepid.bleidiom.R
-import rx.Observable
-import rx.Subscription
-import rx.android.schedulers.AndroidSchedulers
-import rx.lang.kotlin.subscribeBy
+import io.reactivex.Observable
+import io.reactivex.android.schedulers.AndroidSchedulers
+import io.reactivex.disposables.Disposable
+import io.reactivex.rxkotlin.subscribeBy
 import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
@@ -33,8 +33,8 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var scanner: BleScanner
     private var batteryService: BatterijService? = null
-    private var readBatterySub: Subscription? = null
-    private var connectedServiceSub: Subscription? = null
+    private var readBatterySub: Disposable? = null
+    private var connectedServiceSub: Disposable? = null
     private var counter = 0
 
     private lateinit var textView: TextView
@@ -86,9 +86,8 @@ class MainActivity : AppCompatActivity() {
                 setBatterijName(battery, "Counter reached ${++counter}")
 
                 getBatterijName(battery)
-                        .take(1)
                         .observeOn(AndroidSchedulers.mainThread())
-                        .subscribeBy({ name -> toolbar.title = name })
+                        .subscribeBy { name -> toolbar.title = name }
             }
         }
 
@@ -111,8 +110,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
-        if (readBatterySub?.isUnsubscribed == false) {
-            readBatterySub?.unsubscribe()
+        if (readBatterySub?.isDisposed == false) {
+            readBatterySub?.dispose()
         }
         readBatterySub = null
 
@@ -131,7 +130,7 @@ class MainActivity : AppCompatActivity() {
                 .take(1)
                 .repeatWhen { completed -> completed.delay(2, TimeUnit.SECONDS) }
                 .observeOn(AndroidSchedulers.mainThread())
-                .onErrorResumeNext { getPercentageObservable(scanner, connect(scanner)) }
+                .onErrorResumeNext { _: Throwable -> getPercentageObservable(scanner, connect(scanner)) }
     }
 
     private fun createScanner(context: Context) = BleScanner(RxBleClient.create(context))
@@ -141,7 +140,6 @@ class MainActivity : AppCompatActivity() {
 
         return scanner.scanForService<BatterijService>()
                 .take(1)
-                .flatMap { service -> service.connect() }
                 .doOnNext { service -> batteryService = service }
                 .replay()
                 .autoConnect(1) { replayConnection ->
@@ -152,8 +150,8 @@ class MainActivity : AppCompatActivity() {
     private fun disconnect() {
         batteryService = null
 
-        if (connectedServiceSub?.isUnsubscribed == false) {
-            connectedServiceSub?.unsubscribe()
+        if (connectedServiceSub?.isDisposed == false) {
+            connectedServiceSub?.dispose()
         }
         connectedServiceSub = null
     }
