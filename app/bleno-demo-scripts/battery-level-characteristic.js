@@ -2,7 +2,7 @@ var util = require('util');
 var os = require('os');
 var exec = require('child_process').exec;
 
-var bleno = require('../..');
+var bleno = require('bleno');
 
 var Descriptor = bleno.Descriptor;
 var Characteristic = bleno.Characteristic;
