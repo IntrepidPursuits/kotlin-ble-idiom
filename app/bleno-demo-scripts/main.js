@@ -1,5 +1,5 @@
 
-var bleno = require('../..');
+var bleno = require('bleno');
 var BatteryService = require('./battery-service');
 
 var primaryService = new BatteryService();
