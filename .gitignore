@@ -7,4 +7,5 @@ gradle.properties
 /build
 /captures
 app/build
+/library/build
 device-*-*-*-*.png

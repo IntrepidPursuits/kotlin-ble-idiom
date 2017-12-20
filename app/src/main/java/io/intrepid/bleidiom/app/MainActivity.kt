@@ -3,28 +3,23 @@
  */
 package io.intrepid.bleidiom.app
 
-import android.content.Context
 import android.os.Bundle
 import android.support.design.widget.FloatingActionButton
 import android.support.v7.app.AppCompatActivity
 import android.support.v7.widget.Toolbar
-import android.util.Log
 import android.widget.TextView
-import com.polidea.rxandroidble.RxBleClient
-import com.polidea.rxandroidble.internal.RxBleLog
 import io.intrepid.bleidiom.BleScanner
-import io.intrepid.bleidiom.R
-import rx.Observable
-import rx.Subscription
-import rx.android.schedulers.AndroidSchedulers
-import rx.lang.kotlin.subscribeBy
+import io.reactivex.Observable
+import io.reactivex.android.schedulers.AndroidSchedulers
+import io.reactivex.disposables.Disposable
+import io.reactivex.rxkotlin.subscribeBy
 import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
     companion object {
         init {
-            RxBleLog.setLogLevel(RxBleLog.VERBOSE)
-            RxBleLog.setLogger { level, tag, msg -> Log.println(level, tag, msg) }
+//            RxBleLog.setLogLevel(RxBleLog.VERBOSE)
+//            RxBleLog.setLogger { level, tag, msg -> Log.println(level, tag, msg) }
 
             // Upon loading of this MainActivity class, define and register the BatterijService.
             defineBleServices()
@@ -33,8 +28,8 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var scanner: BleScanner
     private var batteryService: BatterijService? = null
-    private var readBatterySub: Subscription? = null
-    private var connectedServiceSub: Subscription? = null
+    private var readBatterySub: Disposable? = null
+    private var connectedServiceSub: Disposable? = null
     private var counter = 0
 
     private lateinit var textView: TextView
@@ -86,15 +81,12 @@ class MainActivity : AppCompatActivity() {
                 setBatterijName(battery, "Counter reached ${++counter}")
 
                 getBatterijName(battery)
-                        .take(1)
                         .observeOn(AndroidSchedulers.mainThread())
-                        .subscribeBy({ name -> toolbar.title = name })
+                        .subscribeBy { name -> toolbar.title = name }
             }
         }
 
         textView = findViewById(android.R.id.text1) as TextView
-
-        scanner = createScanner(this)
     }
 
     override fun onResume() {
@@ -111,8 +103,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
-        if (readBatterySub?.isUnsubscribed == false) {
-            readBatterySub?.unsubscribe()
+        if (readBatterySub?.isDisposed == false) {
+            readBatterySub?.dispose()
         }
         readBatterySub = null
 
@@ -131,17 +123,14 @@ class MainActivity : AppCompatActivity() {
                 .take(1)
                 .repeatWhen { completed -> completed.delay(2, TimeUnit.SECONDS) }
                 .observeOn(AndroidSchedulers.mainThread())
-                .onErrorResumeNext { getPercentageObservable(scanner, connect(scanner)) }
+                .onErrorResumeNext { _: Throwable -> getPercentageObservable(scanner, connect(scanner)) }
     }
-
-    private fun createScanner(context: Context) = BleScanner(RxBleClient.create(context))
 
     private fun connect(scanner: BleScanner): Observable<BatterijService> {
         disconnect()
 
         return scanner.scanForService<BatterijService>()
                 .take(1)
-                .flatMap { service -> service.connect() }
                 .doOnNext { service -> batteryService = service }
                 .replay()
                 .autoConnect(1) { replayConnection ->
@@ -152,8 +141,8 @@ class MainActivity : AppCompatActivity() {
     private fun disconnect() {
         batteryService = null
 
-        if (connectedServiceSub?.isUnsubscribed == false) {
-            connectedServiceSub?.unsubscribe()
+        if (connectedServiceSub?.isDisposed == false) {
+            connectedServiceSub?.dispose()
         }
         connectedServiceSub = null
     }

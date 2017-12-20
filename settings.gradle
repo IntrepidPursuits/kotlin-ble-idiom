@@ -1,1 +1,2 @@
-include ':app'
+rootProject.name = 'ble-dsl'
+include ':library', ':app', ':savantlighting'

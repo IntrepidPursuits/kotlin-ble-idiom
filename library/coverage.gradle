@@ -1,0 +1,121 @@
+apply plugin: 'jacoco'
+
+jacoco {
+    toolVersion = "0.7.9"
+}
+
+// change the buildType and productFlavor fields here if the project uses different build variant for testing
+def buildType = "debug";
+def productFlavor = "";
+def buildVariant = "${productFlavor.capitalize()}${buildType.capitalize()}";
+def buildVariantDirectory = productFlavor.length() > 0 ? "${productFlavor}/${buildType}" : buildType
+
+println("!!!!! ${buildDir}/intermediates/classes/${buildVariantDirectory}")
+
+def coverageSourceDirsJava = files(['src/main/java'])
+def coverageSourceDirsKotlin = files(['src/main/kotlin'])
+def coverageSourceDirs = files(coverageSourceDirsJava, coverageSourceDirsKotlin)
+
+def coverageClassDirsJava = fileTree(
+        dir: "${buildDir}/intermediates/classes/${buildVariantDirectory}",
+        excludes: ['**/R.class',
+                   '**/R$*.class',
+                   '**/BuildConfig.*',
+                   '**/Manifest*.*',
+                   'com/android/**/*.class',
+                   '**/*_ViewBind*' // ButterKnife auto generated classes
+        ]
+)
+def coverageClassDirsKotlin = fileTree(
+        dir: "${buildDir}/tmp/kotlin-classes/${buildVariantDirectory}",
+        excludes: []
+)
+def coverageClassDirs = files(coverageClassDirsJava, coverageClassDirsKotlin)
+
+def unitTestCoverageData = "${buildDir}/jacoco/test${buildVariant}UnitTest.exec"
+//def instrumentationTestCoverageData = "${buildDir}/spoon/${buildVariantDirectory}/coverage/merged-coverage.ec"
+
+// testCoverageEnabled messes up debugging/etc, so we want it disabled most of times.
+// unit test coverage reports seems to work fine even with the flag disabled, but the
+// instrumentation tests need this flag otherwise the coverage data may be incomplete
+def startTaskNames = gradle.startParameter.taskNames
+def isRunningInstrumentationCoverage = startTaskNames.contains('instrumentationTestCoverage') || startTaskNames.contains('testCoverage')
+
+// Run both unit and instrumentation tests and merge the result of both tests into a single report
+task testCoverage(type: JacocoReport, dependsOn: ["test${buildVariant}UnitTest"/*, "spoon${buildVariant}AndroidTest"*/]) {
+    sourceDirectories = coverageSourceDirs
+    classDirectories = coverageClassDirs
+    executionData = files([unitTestCoverageData/*, instrumentationTestCoverageData*/])
+
+    doLast {
+        println "You can view the coverage report at:"
+        println "${buildDir}/reports/jacoco/testCoverage/html/index.html"
+    }
+
+    reports {
+        xml.enabled true
+        xml.destination "${buildDir}/reports/jacoco/testCoverage/coverage.xml"
+    }
+}
+
+// Run and generate the report for the unit tests. The test report only includes the coverage data for
+// the presenter and utils classes since we generally don't unit test any Android related classes
+task unitTestCoverage(type: JacocoReport, dependsOn: "test${buildVariant}UnitTest") {
+    sourceDirectories = coverageSourceDirs
+    classDirectories = fileTree(
+            dir: "${buildDir}/intermediates/classes/${buildVariantDirectory}",
+            includes: ['**/*Presenter*',
+                       '**/utils/*'
+                       // Add any additional testable classes here
+            ]
+    )
+    executionData = files("${buildDir}/jacoco/test${buildVariant}UnitTest.exec")
+
+    doLast {
+        println "You can view the coverage report at:"
+        println "${buildDir}/reports/jacoco/unitTestCoverage/html/index.html"
+    }
+
+    reports {
+        xml.enabled true
+        xml.destination "${buildDir}/reports/jacoco/unitTestCoverage/coverage.xml"
+    }
+}
+
+// Run and generate the report for the instrumentation test
+//task instrumentationTestCoverage(type: JacocoReport/*, dependsOn: "spoon${buildVariant}AndroidTest"*/) {
+//    sourceDirectories = coverageSourceDirs
+//    classDirectories = coverageClassDirs
+//    executionData = files(instrumentationTestCoverageData)
+//
+//    doLast {
+//        println "You can view the coverage report at:"
+//        println "${buildDir}/reports/jacoco/instrumentationTestCoverage/html/index.html"
+//    }
+//
+//    reports {
+//        xml.enabled true
+//        xml.destination "${buildDir}/reports/jacoco/instrumentationTestCoverage/coverage.xml"
+//    }
+//}
+
+android {
+    buildTypes {
+        debug {
+            testCoverageEnabled(isRunningInstrumentationCoverage)
+        }
+    }
+
+    testOptions {
+        unitTests.all {
+            jacoco {
+                // needed so that Robolectric tests are included in the results
+                includeNoLocationClasses = true
+            }
+        }
+    }
+}
+
+//spoon {
+//    codeCoverage = isRunningInstrumentationCoverage
+//}
