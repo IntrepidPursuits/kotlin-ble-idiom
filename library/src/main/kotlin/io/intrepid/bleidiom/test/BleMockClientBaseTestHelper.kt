@@ -38,10 +38,10 @@ import kotlin.reflect.jvm.isAccessible
 */
 
 /**
- * Base class of all tests that need to test BLE functionality and setup a mock RxBleDeviceMock client
+ * Base Test-Helper class of all tests that need to test BLE functionality and setup a mock RxBleDeviceMock client
  * that acts as a BLE Server proxy and doesn't require RoboElectric.
  */
-open class BleMockClientBaseTest : BleBaseTest() {
+open class BleMockClientBaseTestHelper : BleBaseTestHelper() {
     companion object {
         internal var macAddress: String? = null
 
@@ -51,7 +51,7 @@ open class BleMockClientBaseTest : BleBaseTest() {
                 getInitialValue: KProperty1<T, BleCharValue<Any>>.() -> Any? = { null }
         ): RxBleClientMock.DeviceBuilder {
             val service: T = serviceClass.primaryConstructor!!.call()
-            BleMockClientBaseTest.macAddress = macAddress
+            BleMockClientBaseTestHelper.macAddress = macAddress
 
             var charListBuilder = RxBleClientMock.CharacteristicsBuilder()
             var deviceBuilder = RxBleClientMock.DeviceBuilder()
@@ -87,7 +87,7 @@ open class BleMockClientBaseTest : BleBaseTest() {
             }
 
             return deviceBuilder
-                    .deviceMacAddress(BleMockClientBaseTest.macAddress!!)
+                    .deviceMacAddress(BleMockClientBaseTestHelper.macAddress!!)
                     .addService(service.dsl.uuid.toUUID()!!, charListBuilder.build())
                     .rssi(0)
                     .scanRecord(ByteArray(0))
@@ -106,9 +106,7 @@ open class BleMockClientBaseTest : BleBaseTest() {
         }
     }
 
-    override fun setup() {
-        super.setup()
-
+    override fun setup(testClass: Any, factory: BleTestModules.Companion.() -> Unit) {
         PowerMockito
                 .whenNew(BluetoothGattService::class.java)
                 .withAnyArguments()
@@ -129,6 +127,8 @@ open class BleMockClientBaseTest : BleBaseTest() {
                 .thenAnswer {
                     TestableBluetoothGattDescriptor.mock(it.arguments[0] as UUID)
                 }
+
+        super.setup(testClass, factory)
     }
 
     override fun tearDown() {
@@ -145,7 +145,7 @@ typealias ServerDevice = RxBleDeviceMock
 /**
  *  Returns the first advertised service UUID.
  */
-val ServerDevice.uuid get() = advertisedUUIDs[0]
+val ServerDevice.uuid get() = advertisedUUIDs[0]!!
 
 /**
  * Returns the [TestableBluetoothGattCharacteristic] with the given UUID
@@ -197,11 +197,11 @@ internal class ServerCharacteristics {
     companion object {
         /**
          * Ties a [TestableBluetoothGattCharacteristic] to the actively configured device (this device
-         * is represented by the current value of [BleMockClientBaseTest.macAddress]).
+         * is represented by the current value of [BleMockClientBaseTestHelper.macAddress]).
          * @param characteristic The [TestableBluetoothGattCharacteristic] representing the BLE characteristic.
          */
         internal fun registerCharacteristic(characteristic: TestableBluetoothGattCharacteristic<*>) {
-            val macAddress = BleMockClientBaseTest.macAddress!!
+            val macAddress = BleMockClientBaseTestHelper.macAddress!!
             TestableBluetoothGattCharacteristic[macAddress].registerCharacteristic(characteristic)
         }
     }

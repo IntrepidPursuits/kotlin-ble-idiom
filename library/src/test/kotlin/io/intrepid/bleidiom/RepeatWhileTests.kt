@@ -1,6 +1,9 @@
 package io.intrepid.bleidiom
 
-import io.intrepid.bleidiom.test.BleBaseTest
+import com.github.salomonbrys.kodein.instance
+import com.github.salomonbrys.kodein.with
+import io.intrepid.bleidiom.test.BleBaseTestHelper
+import io.intrepid.bleidiom.test.LibTestKodein
 import io.intrepid.bleidiom.util.RepeatWhileTransformer
 import io.intrepid.bleidiom.util.RxLoop
 import io.intrepid.bleidiom.util.plus
@@ -10,6 +13,7 @@ import io.reactivex.Flowable
 import io.reactivex.Observable
 import io.reactivex.Single
 import io.reactivex.observers.TestObserver
+import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subscribers.TestSubscriber
 import org.junit.After
 import org.junit.Before
@@ -21,16 +25,18 @@ import kotlin.test.assertEquals
 
 @Suppress("FunctionName")
 @RunWith(PowerMockRunner::class)
-class RepeatWhileTests : BleBaseTest() {
+class RepeatWhileTests {
+    private val testHelper = BleBaseTestHelper()
+    private val testScheduler: TestScheduler get() = LibTestKodein.with(this).instance()
 
     @Before
-    override fun setup() {
-        super.setup()
+    fun setup() {
+        testHelper.setup(this)
     }
 
     @After
-    override fun tearDown() {
-        super.tearDown()
+    fun tearDown() {
+        testHelper.tearDown()
     }
 
     @Test

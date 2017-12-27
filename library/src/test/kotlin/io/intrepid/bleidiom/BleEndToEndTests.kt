@@ -16,6 +16,7 @@ import io.reactivex.functions.BiFunction
 import io.reactivex.functions.Function3
 import io.reactivex.observers.TestObserver
 import io.reactivex.rxkotlin.subscribeBy
+import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subjects.PublishSubject
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
@@ -74,7 +75,7 @@ internal class TestService : BleService<TestService>() {
 internal class TestService2 : BleService<TestService2>()
 
 internal data class ChunkedData(val data: ArrayWithShortLength = ArrayWithShortLength(), val totalSize: Int = 0) : StructData() {
-    companion object :StructData.DataFactory() {
+    companion object : StructData.DataFactory() {
         override val packingInfo = arrayOf(0, 2)
     }
 }
@@ -86,7 +87,7 @@ internal data class ChunkedData(val data: ArrayWithShortLength = ArrayWithShortL
         value = [(RxBleClientMock.CharacteristicsBuilder::class), (RxBleClientMock.DeviceBuilder::class)],
         fullyQualifiedNames = ["com.polidea.rxandroidble.mockrxandroidble.RxBleConnectionMock\$21"]
 )
-class BleEndToEndTests : BleMockClientBaseTest() {
+class BleEndToEndTests {
     companion object {
         const val MAC_ADDRESS1 = "00:11:22:33:44:55"
         const val INITIAL_NUMBER_VAl = 1
@@ -103,16 +104,16 @@ class BleEndToEndTests : BleMockClientBaseTest() {
 //        }
     }
 
+    private val testHelper = BleMockClientBaseTestHelper()
+    private val testScheduler: TestScheduler get() = LibTestKodein.with(this).instance()
     private lateinit var serverDevice: ServerDevice
 
     @Before
-    override fun setup() {
-        super.setup()
-
+    fun setup() {
         TestService.addConfiguration()
 
-        BleTestModules.load {
-            testDevices = listOf(buildDeviceService(TestService::class, MAC_ADDRESS1) {
+        testHelper.setup(this) {
+            testDevices = listOf(BleMockClientBaseTestHelper.buildDeviceService(TestService::class, MAC_ADDRESS1) {
                 when {
                     this == TestService::number -> BleEndToEndTests.INITIAL_NUMBER_VAl
                     this == TestService::bytes -> BleEndToEndTests.INITIAL_BYTES_VAL
@@ -122,14 +123,14 @@ class BleEndToEndTests : BleMockClientBaseTest() {
             }.build() as RxBleDeviceMock)
         }
 
-        serverDevice = BleTestModules.kodein.with(MAC_ADDRESS1).instance()
+        serverDevice = LibTestKodein.with(MAC_ADDRESS1).instance()
     }
 
     @After
-    override fun tearDown() {
-        super.tearDown()
+    fun tearDown() {
+        testHelper.tearDown()
 
-        BleTestModules.unload()
+        BleTestModules.tearDown()
     }
 
     @Test
@@ -200,7 +201,7 @@ class BleEndToEndTests : BleMockClientBaseTest() {
         val testObserver = TestObserver<Any>()
 
         val device = ServiceDeviceFactory.obtainClientDevice<TestService>(serverDevice.uuid, serverDevice)
-        Observable.zip<Int,Int,Int,Int>(
+        Observable.zip<Int, Int, Int, Int>(
                 device[TestService::number],
                 device[TestService::number],
                 device[TestService::number],
@@ -228,7 +229,7 @@ class BleEndToEndTests : BleMockClientBaseTest() {
         val testObserver = TestObserver<Any>()
 
         val device = ServiceDeviceFactory.obtainClientDevice<TestService>(serverDevice.uuid, serverDevice)
-        Observable.zip<Int,Int,Int,Int>(
+        Observable.zip<Int, Int, Int, Int>(
                 device[TestService::number],
                 device[TestService::number],
                 device[TestService::number],
@@ -353,9 +354,9 @@ class BleEndToEndTests : BleMockClientBaseTest() {
                             .toObservable()
                 }
             }
-        }.start<List<Pair<ChunkedData,Int>>>()
+        }.start<List<Pair<ChunkedData, Int>>>()
 
-        val testObserver = TestObserver<List<Pair<ChunkedData,Int>>>()
+        val testObserver = TestObserver<List<Pair<ChunkedData, Int>>>()
         resultObs.subscribe(testObserver)
 
         while (testObserver.completions() == 0.toLong()) {
@@ -374,7 +375,7 @@ class BleEndToEndTests : BleMockClientBaseTest() {
             assertEquals(OK_RESPONSE, goodAnswer)
             assertEquals(expectedChunk, goodData)
 
-            val wrongChunks = list.slice(0 .. list.lastIndex)
+            val wrongChunks = list.slice(0..list.lastIndex)
             assert(wrongChunks.none { (_, answer) -> OK_RESPONSE == answer })
             assert(wrongChunks.none { (data, _) -> expectedChunk != data })
         }
@@ -447,7 +448,7 @@ class BleEndToEndTests : BleMockClientBaseTest() {
     @Test
     fun test_for_race_conditions() {
         // Dummy Server setup, where "number" always returns 0
-        val testServerObserver = TestObserver<Pair<String,String>>()
+        val testServerObserver = TestObserver<Pair<String, String>>()
         serverDevice[TestService::number]?.observeServerReads()
                 ?.subscribeBy { char ->
                     char.value = 0
@@ -459,7 +460,7 @@ class BleEndToEndTests : BleMockClientBaseTest() {
                         ?.map { char -> char.value },
                 serverDevice[TestService::string2]?.observeServerWrites()
                         ?.map { char -> char.value },
-                BiFunction<String,String,Pair<String,String>> { a, b  -> a to b })
+                BiFunction<String, String, Pair<String, String>> { a, b -> a to b })
                 .toObservable().subscribe(testServerObserver)
 
         // Observe connection state.
@@ -474,9 +475,9 @@ class BleEndToEndTests : BleMockClientBaseTest() {
         val thread1 = Thread {
             // Generate pairs whose first and second values lie between 0 and 99
             for (i in 0..49) {
-                device[TestService::string1] = (device[TestService::number] + 1 + 2*i).asString()
+                device[TestService::string1] = (device[TestService::number] + 1 + 2 * i).asString()
                 Thread.sleep(10)
-                device[TestService::string2] = (device[TestService::number] + 2*i).asString()
+                device[TestService::string2] = (device[TestService::number] + 2 * i).asString()
             }
         }
         thread1.start()
@@ -486,9 +487,9 @@ class BleEndToEndTests : BleMockClientBaseTest() {
         val thread2 = Thread {
             // Generate pairs whose first and second values lie between 100 and 199
             for (i in 0..49) {
-                device[TestService::string2] = (device[TestService::number] + 100 + 2*i).asString()
+                device[TestService::string2] = (device[TestService::number] + 100 + 2 * i).asString()
                 Thread.sleep(9)
-                device[TestService::string1] = (device[TestService::number] + 101 + 2*i).asString()
+                device[TestService::string1] = (device[TestService::number] + 101 + 2 * i).asString()
             }
         }
         thread2.start()
@@ -518,11 +519,11 @@ class BleEndToEndTests : BleMockClientBaseTest() {
 
         assertEquals(1, sortedString1Values[0])
         assertEquals(199, sortedString1Values.last())
-        assertTrue {  sortedString1Values.all { it -> it % 2 == 1 } }
+        assertTrue { sortedString1Values.all { it -> it % 2 == 1 } }
 
         assertEquals(0, sortedString2Values[0])
         assertEquals(198, sortedString2Values.last())
-        assertTrue {  sortedString2Values.all { it -> it % 2 == 0 } }
+        assertTrue { sortedString2Values.all { it -> it % 2 == 0 } }
 
         assertEquals(ConnectionState.Disconnected, connectionObserver.values().last())
     }
@@ -563,7 +564,7 @@ class BleEndToEndTests : BleMockClientBaseTest() {
 
     @Test
     fun test_data_object_assembly() {
-        val testData = TestData(201, -101, SubData(-1, 1001.1001f, "0123456789", byteArrayOf(0,1,2,3,4,5,6,7,8,9)), "0123")
+        val testData = TestData(201, -101, SubData(-1, 1001.1001f, "0123456789", byteArrayOf(0, 1, 2, 3, 4, 5, 6, 7, 8, 9)), "0123")
         val array = testData.deconstruct()
         val testData2 = StructData.construct(TestData::class, array)
         val array2 = testData2.deconstruct()
@@ -581,7 +582,7 @@ class BleEndToEndTests : BleMockClientBaseTest() {
 
     @Test
     fun test_data_object_assemblySignedVsUnsignedBytes() {
-        val testData = TestData(-5, 101, SubData(1, 1001.1001f, "0123456789", byteArrayOf(0,1,2,3,4,5,6,7,8,9)), "0123")
+        val testData = TestData(-5, 101, SubData(1, 1001.1001f, "0123456789", byteArrayOf(0, 1, 2, 3, 4, 5, 6, 7, 8, 9)), "0123")
         val array = testData.deconstruct()
         val testData2 = StructData.construct(TestData::class, array)
         val array2 = testData2.deconstruct()
@@ -602,20 +603,20 @@ class BleEndToEndTests : BleMockClientBaseTest() {
         assertEquals(0, testData2.subData!!.byteVal)
         assertEquals(0f, testData2.subData.number)
         assertEquals("", testData2.subData.id)
-        assertArrayEquals(ByteArray(10, {0}), testData2.subData.data)
+        assertArrayEquals(ByteArray(10, { 0 }), testData2.subData.data)
         assertArrayEquals(array, array2)
     }
 
     @Test
     fun test_data_object_assembly_arrays_too_long() {
-        val testData = TestData(0, 0, SubData(0, 0f, "0123456789abcdef", byteArrayOf(0,1,2,3,4,5,6,7,8,9,10,11,12)), "0123")
+        val testData = TestData(0, 0, SubData(0, 0f, "0123456789abcdef", byteArrayOf(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)), "0123")
         val array = testData.deconstruct()
         val testData2 = StructData.construct(TestData::class, array)
         val array2 = testData2.deconstruct()
 
         assertEquals(testData.otherValue, testData2.otherValue)
         assertEquals("0123456789", testData2.subData!!.id) // String is limited to 10 chars (11 - 1)
-        assertArrayEquals(ByteArray(10, {it.toByte()}), testData2.subData.data) // Array is set to 10 elements
+        assertArrayEquals(ByteArray(10, { it.toByte() }), testData2.subData.data) // Array is set to 10 elements
         assertArrayEquals(array, array2)
     }
 
@@ -634,13 +635,13 @@ class BleEndToEndTests : BleMockClientBaseTest() {
 
     @Test
     fun test_data_object_assembly_size_calculations() {
-        val testData = TestData(201, -101, SubData(-1, 1001.1001f, "0123456789", byteArrayOf(0,1,2,3,4,5,6,7,8,9)), "0123")
+        val testData = TestData(201, -101, SubData(-1, 1001.1001f, "0123456789", byteArrayOf(0, 1, 2, 3, 4, 5, 6, 7, 8, 9)), "0123")
         val array = testData.deconstruct()
         assertEquals(array.size, testData.structSize)
     }
 }
 
-sealed class Hello(val helloValue: Int): StructData() {
+sealed class Hello(val helloValue: Int) : StructData() {
     companion object : StructData.SealedFactory() {
         override fun sizeOf(value: StructData?, valueClass: KClass<out StructData>?): Int = packingInfo.sum()
 
@@ -662,7 +663,7 @@ sealed class Hello(val helloValue: Int): StructData() {
 
 object Hello1 : Hello(0)
 
-data class SubData(val byteVal : Byte, val number: Float, val id: String, val data: ByteArray, val hello: Hello = Hello1) : StructData() {
+data class SubData(val byteVal: Byte, val number: Float, val id: String, val data: ByteArray, val hello: Hello = Hello1) : StructData() {
     companion object : StructData.DataFactory() {
         override val packingInfo = arrayOf(1, 4, 11, 10, 0)
     }

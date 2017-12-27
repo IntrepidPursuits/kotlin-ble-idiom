@@ -1,6 +1,6 @@
 package io.intrepid.bleidiom
 
-import io.intrepid.bleidiom.test.BleBaseTest
+import io.intrepid.bleidiom.test.BleBaseTestHelper
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -10,15 +10,17 @@ import kotlin.test.assertEquals
 
 @Suppress("FunctionName")
 @RunWith(PowerMockRunner::class)
-class BleTransformersTest : BleBaseTest() {
+class BleTransformersTest {
+    private val testHelper = BleBaseTestHelper()
+
     @Before
-    override fun setup() {
-        super.setup()
+    fun setup() {
+        testHelper.setup(this)
     }
 
     @After
-    override fun tearDown() {
-        super.tearDown()
+    fun tearDown() {
+        testHelper.tearDown()
     }
 
     @Test
