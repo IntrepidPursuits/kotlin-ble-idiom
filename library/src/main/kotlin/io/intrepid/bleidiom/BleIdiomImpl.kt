@@ -39,7 +39,6 @@ internal object Registration {
  * This 'keyword' will start any [BleService] configuration.
  *
  * See also [BleIdiomDSL] and its related interfaces.
- * @sample [io.intrepid.bleidiom.app.defineBleServices]
  */
 @Suppress("ClassName")
 object configureBleService : BleIdiomDSL {
@@ -166,6 +165,9 @@ internal class BleCharValueDelegate<Val : Any>() : BleCharHandlerDSL<Val> {
 
     override var fromByteArray: ((ByteArray) -> Val)? = null
     override var toByteArray: ((Val) -> ByteArray)? = null
+    override var toBatchInfo: ((Val, ByteArray) -> BatchInfo) = { _, bytes ->
+        service?.let { it.mtuSize to bytes } ?: Pair(MIN_MTU_SIZE, bytes)
+    }
 
     init {
         backingField.readAction = {
@@ -196,11 +198,22 @@ internal class BleCharValueDelegate<Val : Any>() : BleCharHandlerDSL<Val> {
         }
 
         backingField.writeAction = { value ->
+            val mtu = service?.mtuSize ?: MIN_MTU_SIZE
             letMany(uuid, service?.sharedConnection, toByteArray) { charUUID, connection, transform ->
                 backingField.inFlightValue = value
                 connection.flatMap {
-                    it.writeCharacteristic(charUUID, transform(value))
-                            .toRx2()
+                    val bytes = transform(value)
+                    val writeObs = if (bytes.size > mtu) {
+                        val batchInfo = toBatchInfo(value, bytes)
+                        it.createNewLongWriteBuilder()
+                                .setCharacteristicUuid(charUUID)
+                                .setMaxBatchSize(batchInfo.first)
+                                .setBytes(batchInfo.second)
+                                .build()
+                    } else {
+                        it.writeCharacteristic(charUUID, bytes)
+                    }
+                    writeObs.toRx2()
                             .map { _ -> value }
                             .doOnNext { backingField.currentValue = it }
                 }.take(1)

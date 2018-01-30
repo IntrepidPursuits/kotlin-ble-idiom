@@ -6,12 +6,10 @@ import android.bluetooth.BluetoothGattService
 import com.nhaarman.mockito_kotlin.any
 import com.nhaarman.mockito_kotlin.doAnswer
 import com.nhaarman.mockito_kotlin.mock
+import com.polidea.rxandroidble.RxBleDevice
 import com.polidea.rxandroidble.mockrxandroidble.RxBleClientMock
 import com.polidea.rxandroidble.mockrxandroidble.RxBleDeviceMock
-import io.intrepid.bleidiom.BleCharValue
-import io.intrepid.bleidiom.BleCharValueDelegate
-import io.intrepid.bleidiom.BleService
-import io.intrepid.bleidiom.toUUID
+import io.intrepid.bleidiom.*
 import io.intrepid.bleidiom.util.toRx1
 import io.reactivex.Flowable
 import io.reactivex.Observable
@@ -311,7 +309,7 @@ class TestableBluetoothGattCharacteristic<V : Any>(val uuid: UUID) {
     private lateinit var fromByteArray: ((ByteArray) -> V)
     private lateinit var toByteArray: ((V) -> ByteArray)
 
-    private var valueOnServer: ByteArray
+    var valueOnServer: ByteArray
         get() {
             synchronized(this) {
                 serverReadProcessor.onNext(this)
@@ -388,3 +386,20 @@ class TestableBluetoothGattDescriptor(val uuid: UUID) {
 
     private var value: ByteArray? = null
 }
+
+/* Some Test Helper functions/properties */
+
+/**
+ * Creates a new [BleIdiomDevice] with a mocked [RxBleDevice]
+ */
+val bleDeviceWithRxMock get() = BleIdiomDevice(mock<RxBleDevice>())
+
+/**
+ * Returns a (mocked) [RxBleDevice] as a handle ([Any]) from a [BleIdiomDevice]
+ */
+val BleIdiomDevice.rxMock get(): Any = this.device
+
+/**
+ * Returns a (mocked) [BleIdiomDevice] from a [BleService]
+ */
+val BleService<*>.device get() = this.device

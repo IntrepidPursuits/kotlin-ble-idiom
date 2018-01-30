@@ -1,16 +1,19 @@
 package io.intrepid.bleidiom
 
-import com.github.salomonbrys.kodein.instance
-import com.github.salomonbrys.kodein.with
+import com.github.salomonbrys.kodein.*
 import com.polidea.rxandroidble.mockrxandroidble.RxBleClientMock
 import com.polidea.rxandroidble.mockrxandroidble.RxBleDeviceMock
+import io.intrepid.bleidiom.module.TAG_EXECUTOR_SCHEDULER
 import io.intrepid.bleidiom.services.ArrayWithShortLength
 import io.intrepid.bleidiom.services.StructData
 import io.intrepid.bleidiom.services.withLength
 import io.intrepid.bleidiom.test.*
-import io.intrepid.bleidiom.util.*
-import io.reactivex.Flowable
+import io.intrepid.bleidiom.test.BleTestModules.Companion.testKodeinOverrides
+import io.intrepid.bleidiom.util.RxLoop
+import io.intrepid.bleidiom.util.get
+import io.intrepid.bleidiom.util.times
 import io.reactivex.Observable
+import io.reactivex.Scheduler
 import io.reactivex.Single
 import io.reactivex.functions.BiFunction
 import io.reactivex.functions.Function3
@@ -68,7 +71,15 @@ internal class TestService : BleService<TestService>() {
         fromByteArray = { toByteArrayNumber(it) }
         toByteArray = { toNumberByteArray(it) }
     }
-    var bytes: BleCharValue<ByteArray> by bleCharHandler()
+    var bytes: BleCharValue<ByteArray> by bleChunkedCharHandler { _, bytes ->
+        val chunkSize = mtuSize - 4 // ChunkedData creates an overhead of 4 bytes
+
+        val chunks = createChunks(bytes, chunkSize)
+        mtuSize to chunks.foldIndexed(ByteArray(chunks.size * mtuSize)) { i, array, chunk ->
+            chunk.deconstruct(array, BLE_DEFAULBLE_BYTE_ORDER, i * mtuSize)
+            array
+        }
+    }
     var chunkedData: BleCharValue<ChunkedData> by bleCharHandler()
 }
 
@@ -76,10 +87,22 @@ internal class TestService2 : BleService<TestService2>()
 
 internal data class ChunkedData(val data: ArrayWithShortLength = ArrayWithShortLength(), val totalSize: Int = 0) : StructData() {
     companion object : StructData.DataFactory() {
-        override val packingInfo = arrayOf(0, 2)
+        override val packingInfo = intArrayOf(0, 2)
     }
 }
 
+private fun createChunks(stringBytes: ByteArray, maxChunkSize: Int): MutableList<ChunkedData> {
+    val chunks = mutableListOf<ChunkedData>()
+    var offset = 0
+    while (offset < stringBytes.size) {
+        val chunkSize = min(maxChunkSize, stringBytes.size - offset)
+        if (chunkSize > 0) {
+            chunks += ChunkedData(stringBytes.sliceArray(offset until (offset + chunkSize)).withLength(2), stringBytes.size)
+            offset += chunkSize
+        }
+    }
+    return chunks
+}
 
 @Suppress("FunctionName", "LocalVariableName")
 @RunWith(PowerMockRunner::class)
@@ -104,6 +127,12 @@ class BleEndToEndTests {
 //        }
     }
 
+    private val testModule = Kodein.Module(allowSilentOverride = true) {
+        bind<Scheduler>(tag = TAG_EXECUTOR_SCHEDULER) with multiton { _: Any ->
+            with(this@BleEndToEndTests).instance<TestScheduler>()
+        }
+    }
+
     private val testHelper = BleMockClientBaseTestHelper()
     private val testScheduler: TestScheduler get() = LibTestKodein.with(this).instance()
     private lateinit var serverDevice: ServerDevice
@@ -111,6 +140,10 @@ class BleEndToEndTests {
     @Before
     fun setup() {
         TestService.addConfiguration()
+
+        testKodeinOverrides = {
+            import(testModule, allowOverride = true)
+        }
 
         testHelper.setup(this) {
             testDevices = listOf(BleMockClientBaseTestHelper.buildDeviceService(TestService::class, MAC_ADDRESS1) {
@@ -187,6 +220,8 @@ class BleEndToEndTests {
         val device = ServiceDeviceFactory.obtainClientDevice<TestService>(serverDevice.uuid, serverDevice)
         (device[TestService::bytes][index] * 5.toByte()).subscribe(testObserver)
 
+        testScheduler.triggerActions()
+
         testObserver.dispose()
 
         testScheduler.triggerActions()
@@ -207,6 +242,8 @@ class BleEndToEndTests {
                 device[TestService::number],
                 Function3 { v1, v2, v3 -> v1 + v2 + v3 })
                 .subscribe(testObserver)
+
+        testScheduler.triggerActions()
 
         testObserver.dispose()
 
@@ -235,6 +272,8 @@ class BleEndToEndTests {
                 device[TestService::number],
                 Function3 { v1, v2, v3 -> v1 + v2 + v3 })
                 .subscribe(testObserver)
+
+        testScheduler.triggerActions()
 
         testObserver.dispose()
 
@@ -289,7 +328,7 @@ class BleEndToEndTests {
     }
 
     @Test
-    fun test_chunked_writes() {
+    fun test_externally_chunked_writes() {
         val RANDOM = Random(System.currentTimeMillis())
         val OK_RESPONSE = 1
         val WRONG_RESPONSE = 0
@@ -311,7 +350,7 @@ class BleEndToEndTests {
             """.trimMargin("|")
 
         val stringBytes = longString.toByteArray()
-        val maxChunkSize = 17
+        val maxChunkSize = 15
 
         val chunks = createChunks(stringBytes, maxChunkSize)
         val chunksIter = chunks.iterator()
@@ -388,17 +427,37 @@ class BleEndToEndTests {
         testObserver.dispose()
     }
 
-    private fun createChunks(stringBytes: ByteArray, maxChunkSize: Int): MutableList<ChunkedData> {
-        val chunks = mutableListOf<ChunkedData>()
-        var offset = 0
-        while (offset < stringBytes.size) {
-            val chunkSize = min(maxChunkSize, stringBytes.size - offset)
-            if (chunkSize > 0) {
-                chunks += ChunkedData(stringBytes.sliceArray(offset until (offset + chunkSize)).withLength(2), stringBytes.size)
-                offset += chunkSize
-            }
+    @Test
+    fun test_internally_chunked_writes() {
+        val longString = """
+            |012Lorem ipsum dolor sit amet, consectetur adipiscing elit. Aenean volutpat dui in gravida varius.
+            |Nullam lacinia metus augue, id dictum libero efficitur quis. Suspendisse iaculis ligula lectus.
+            |Phasellus rutrum lacinia nulla at suscipit. Morbi vehicula gravida dolor, nec tempor purus suscipit id.
+            |Nullam vitae gravida turpis. Aliquam consectetur pellentesque metus, tempor vulputate magna venenatis ut.
+            |Etiam fermentum felis congue augue placerat porttitor. Nulla facilisi. Morbi pharetra augue quam,
+            |a varius felis bibendum quis. Etiam eget justo laoreet, blandit quam non, tincidunt nisl.
+            |Donec in augue in felis venenatis rhoncus vitae ut elit. Sed non efficitur elit, sed blandit nunc.012
+            """.trimMargin("|")
+
+        // Monitor what the server (remote BLE Device) receives.
+        val serverTestObserver = TestObserver<ByteArray>()
+        val serverTestPub = PublishSubject.create<ByteArray>()
+        serverTestPub.subscribe(serverTestObserver)
+
+        serverDevice[TestService::bytes]?.observeServerWrites()?.subscribeBy {
+            val chunkedData = StructData.construct(ChunkedData::class, it.value)
+            serverTestPub.onNext(chunkedData.data.payload)
         }
-        return chunks
+
+        // Start client test.
+        val device = ServiceDeviceFactory.obtainClientDevice<TestService>(serverDevice.uuid, serverDevice)
+        device[TestService::bytes] = longString.toByteArray()
+
+        testScheduler.triggerActions()
+
+        // Check if the server got the correct requests from the client.
+        val resultString = serverTestObserver.values().fold("") { acc, bytes -> acc + String(bytes) }
+        assertEquals(longString, resultString)
     }
 
     @Test
@@ -410,7 +469,7 @@ class BleEndToEndTests {
         device.observeConnectionState().subscribe(connectionObserver)
 
         // Retain first connection.
-        device.retainConnection()
+        val retainer1 = device.retainConnection()
 
         testScheduler.triggerActions()
 
@@ -419,113 +478,36 @@ class BleEndToEndTests {
         }
 
         // Retain second connection.
-        device.retainConnection()
+        val retainer2 = device.retainConnection()
 
         // Release the second one.
-        device.releaseRetainedConnection()
+        retainer2.close()
 
         testScheduler.triggerActions()
 
         connectionObserver.assertValueAt(connectionObserver.valueCount() - 1) {
             it == ConnectionState.Connected
         }
+        val numberOfConnectionStateChanges = connectionObserver.valueCount()
 
         // Do some operations.
         device[TestService::string1] = "Hello"
         device[TestService::number].subscribe()
         device[TestService::string2] = device[TestService::string3]
 
+        testScheduler.triggerActions()
+
+        // Check that there were no connection-state changes, because we retained a connection.
+        assertEquals(numberOfConnectionStateChanges, connectionObserver.valueCount())
+
         // And release the first one.
-        device.releaseRetainedConnection()
+        retainer1.close()
 
         testScheduler.triggerActions()
 
         connectionObserver.assertValueAt(connectionObserver.valueCount() - 1) {
             it == ConnectionState.Disconnected
         }
-    }
-
-    @Test
-    fun test_for_race_conditions() {
-        // Dummy Server setup, where "number" always returns 0
-        val testServerObserver = TestObserver<Pair<String, String>>()
-        serverDevice[TestService::number]?.observeServerReads()
-                ?.subscribeBy { char ->
-                    char.value = 0
-                }
-
-        // Observe write-characteristic calls coming in from the client.
-        Flowable.zip(
-                serverDevice[TestService::string1]?.observeServerWrites()
-                        ?.map { char -> char.value },
-                serverDevice[TestService::string2]?.observeServerWrites()
-                        ?.map { char -> char.value },
-                BiFunction<String, String, Pair<String, String>> { a, b -> a to b })
-                .toObservable().subscribe(testServerObserver)
-
-        // Observe connection state.
-        val connectionObserver = TestObserver<ConnectionState>()
-
-        // Start client test.
-        val device = ServiceDeviceFactory.obtainClientDevice<TestService>(serverDevice.uuid, serverDevice)
-        device.observeConnectionState().subscribe(connectionObserver)
-
-        // Generate 100 pairs, each pair's first value is odd, its seconds value is even.
-        // Generate them using two threads using different timing.
-        val thread1 = Thread {
-            // Generate pairs whose first and second values lie between 0 and 99
-            for (i in 0..49) {
-                device[TestService::string1] = (device[TestService::number] + 1 + 2 * i).asString()
-                Thread.sleep(10)
-                device[TestService::string2] = (device[TestService::number] + 2 * i).asString()
-            }
-        }
-        thread1.start()
-
-        testScheduler.triggerActions()
-
-        val thread2 = Thread {
-            // Generate pairs whose first and second values lie between 100 and 199
-            for (i in 0..49) {
-                device[TestService::string2] = (device[TestService::number] + 100 + 2 * i).asString()
-                Thread.sleep(9)
-                device[TestService::string1] = (device[TestService::number] + 101 + 2 * i).asString()
-            }
-        }
-        thread2.start()
-
-        testScheduler.triggerActions()
-
-        thread1.join()
-
-        testScheduler.triggerActions()
-
-        thread2.join()
-
-        testScheduler.triggerActions()
-
-        // And check if the (dummy) server got the expected value.
-        testServerObserver.assertValueCount(100)
-
-        val sortedString1Values = testServerObserver.values().asSequence()
-                .toSet()
-                .map { pair -> pair.first.toInt() }
-                .sorted().toList()
-
-        val sortedString2Values = testServerObserver.values().asSequence()
-                .toSet()
-                .map { pair -> pair.second.toInt() }
-                .sorted().toList()
-
-        assertEquals(1, sortedString1Values[0])
-        assertEquals(199, sortedString1Values.last())
-        assertTrue { sortedString1Values.all { it -> it % 2 == 1 } }
-
-        assertEquals(0, sortedString2Values[0])
-        assertEquals(198, sortedString2Values.last())
-        assertTrue { sortedString2Values.all { it -> it % 2 == 0 } }
-
-        assertEquals(ConnectionState.Disconnected, connectionObserver.values().last())
     }
 
     @Test
@@ -544,6 +526,8 @@ class BleEndToEndTests {
         // Client observes future server-notifications.
         device.observeNotifications(TestService::string2).subscribe(testObs)
 
+        testScheduler.triggerActions()
+
         // Server sends out three notifications to any client that is listening/observing.
         firstNameChar?.sendNotification("string2-1".toByteArray())
         firstNameChar?.sendNotification("string2-2".toByteArray())
@@ -561,6 +545,111 @@ class BleEndToEndTests {
 
         assertEquals(ConnectionState.Disconnected, connectionObserver.values().last())
     }
+
+    @Test
+    fun test_killing_connections_on_long_living_notification_observers() {
+        val device = ServiceDeviceFactory.obtainClientDevice<TestService>(serverDevice.uuid, serverDevice)
+
+        val bytesObservers = mutableListOf<TestObserver<ByteArray>>()
+        val string2Observers = mutableListOf<TestObserver<String>>()
+
+        // Create 5 pairs notif-observers and kill the connection after starting the observations 5 times.
+        for (i in 0 until 5) {
+            val byteObs = TestObserver<ByteArray>()
+            val string2Obs = TestObserver<String>()
+
+            device.observeNotifications(TestService::bytes).subscribe(byteObs)
+            device.observeNotifications(TestService::string2).subscribe(string2Obs)
+            testScheduler.triggerActions()
+
+            device.killCurrentConnection()
+            testScheduler.triggerActions()
+
+            bytesObservers += byteObs
+            string2Observers += string2Obs
+        }
+
+        // Create 5 more pairs notif-observers and don't kill the connection.
+        for (i in 5 until 10) {
+            val byteObs = TestObserver<ByteArray>()
+            val string2Obs = TestObserver<String>()
+
+            device.observeNotifications(TestService::bytes).subscribe(byteObs)
+            device.observeNotifications(TestService::string2).subscribe(string2Obs)
+            testScheduler.triggerActions()
+
+            bytesObservers += byteObs
+            string2Observers += string2Obs
+        }
+
+        // This means the first 5 pairs have BleForcedDisconnectedException errors
+        for (i in 0 until 5) {
+            bytesObservers[i].assertError { it is BleForcedDisconnectedException }
+            string2Observers[i].assertError { it is BleForcedDisconnectedException }
+        }
+
+        // And the next 5 pairs are fine.
+        for (i in 5 until 10) {
+            bytesObservers[i].assertNoErrors()
+            string2Observers[i].assertNoErrors()
+        }
+
+        // Until we kill the connection now, once affecting all notif-observers....
+        device.killCurrentConnection()
+        testScheduler.triggerActions()
+
+        // This means that the last 5 pairs have BleForcedDisconnectedException errors now as well.
+        for (i in 5 until 10) {
+            bytesObservers[i].assertError { it is BleForcedDisconnectedException }
+            string2Observers[i].assertError { it is BleForcedDisconnectedException }
+        }
+    }
+
+    @Test
+    fun test_killing_connection_when_retaining_one() {
+        val device = ServiceDeviceFactory.obtainClientDevice<TestService>(serverDevice.uuid, serverDevice)
+
+        var error: Throwable? = null
+        val retainer = device.retainConnection { error = it }
+
+        val testObserverWrite = TestObserver<String>()
+        writePeriodically(device, "String1").subscribe(testObserverWrite)
+
+        val testObserverRead1 = TestObserver<String>()
+        readPeriodically(device).subscribe(testObserverRead1)
+
+        val testObserverNotif = TestObserver<ByteArray>()
+        device.observeNotifications(TestService::bytes).subscribe(testObserverNotif)
+
+        testScheduler.advanceTimeBy(500, TimeUnit.MILLISECONDS)
+
+        device.killCurrentConnection()
+        testScheduler.triggerActions()
+
+        testScheduler.advanceTimeBy(500, TimeUnit.MILLISECONDS)
+
+        // Reads and writes are using one-off-connections.
+        // This means that, unless the disconnect happens when the read/write is waiting for a
+        // response, a read/write will just establish a fresh new connection and do its work.
+        testObserverWrite.assertValueCount(6)
+        testObserverWrite.assertNoErrors()
+        testObserverRead1.assertValueCount(6)
+        testObserverRead1.assertNoErrors()
+
+        // Notifications-observers, however, hold on to the connection as long as they are active.
+        assertTrue(error is BleForcedDisconnectedException)
+        testObserverNotif.assertError { it is BleForcedDisconnectedException }
+
+        retainer.close()
+    }
+
+    private fun writePeriodically(device: TestService, value: String) =
+            Observable.interval(0, 200, TimeUnit.MILLISECONDS, testScheduler)
+                    .flatMap { device.string2(value) }
+
+    private fun readPeriodically(device: TestService) =
+            Observable.interval(0, 200, TimeUnit.MILLISECONDS, testScheduler)
+                    .flatMap { device.string3() }
 
     @Test
     fun test_data_object_assembly() {
@@ -643,21 +732,19 @@ class BleEndToEndTests {
 
 sealed class Hello(val helloValue: Int) : StructData() {
     companion object : StructData.SealedFactory() {
-        override fun sizeOf(value: StructData?, valueClass: KClass<out StructData>?): Int = packingInfo.sum()
-
         override fun fromByteArrayWithSize(dataClass: KClass<out StructData>, bytes: ByteArray, order: ByteOrder, offset: Int): Pair<StructData, Int> {
             return when (bytes[offset]) {
                 0.toByte() -> Hello1
                 else -> throw Exception("Invalid property value ${bytes[offset]}")
-            } to packingInfo.sum()
+            } to size
         }
 
         override fun toByteArray(value: StructData, bytes: ByteArray, order: ByteOrder, offset: Int): Int {
             bytes[offset] = (value as Hello).helloValue.toByte()
-            return packingInfo.sum()
+            return size
         }
 
-        override val packingInfo = arrayOf(1)
+        override val packingInfo = intArrayOf(1)
     }
 }
 
@@ -665,12 +752,11 @@ object Hello1 : Hello(0)
 
 data class SubData(val byteVal: Byte, val number: Float, val id: String, val data: ByteArray, val hello: Hello = Hello1) : StructData() {
     companion object : StructData.DataFactory() {
-        override val packingInfo = arrayOf(1, 4, 11, 10, 0)
+        override val packingInfo = intArrayOf(1, 4, 11, 10, 0)
     }
 
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
-        if (javaClass != other?.javaClass) return false
 
         other as SubData
 
@@ -693,6 +779,6 @@ data class SubData(val byteVal: Byte, val number: Float, val id: String, val dat
 
 data class TestData(val someValue: Int, val someOthervalue: Int, val subData: SubData?, val otherValue: String) : StructData() {
     companion object : StructData.DataFactory() {
-        override val packingInfo = arrayOf(1, -1, 0, 0)
+        override val packingInfo = intArrayOf(1, -1, 0, 0)
     }
 }
