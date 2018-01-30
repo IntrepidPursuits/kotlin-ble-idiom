@@ -5,6 +5,7 @@
  */
 package io.intrepid.bleidiom
 
+import com.polidea.rxandroidble.RxBleConnection
 import io.intrepid.bleidiom.services.StructData
 import java.math.BigInteger
 import java.nio.ByteBuffer
@@ -14,13 +15,18 @@ import java.util.*
 import kotlin.reflect.KClass
 import kotlin.reflect.full.isSubclassOf
 
+const val MIN_MTU_SIZE = RxBleConnection.GATT_MTU_MINIMUM - RxBleConnection.GATT_WRITE_MTU_OVERHEAD
 val BLE_DEFAULBLE_BYTE_ORDER = ByteOrder.LITTLE_ENDIAN!!
+const val LONG_UUID_BASE = "-0000-1000-8000-00805F9B34FB"
+const val LONG_CUSTOM_UUID_BASE = "-0451-4000-B000-000000000000"
 
-internal val TO_LONG_UUID = { shortUUID: String -> "0000$shortUUID-0000-1000-8000-00805F9B34FB" }
-internal val TO_LONG_CUSTOM_UUID = { shortUUID: String -> "F000$shortUUID-0451-4000-B000-000000000000" }
+internal val TO_LONG_UUID = { shortUUID: String -> "0000$shortUUID$LONG_UUID_BASE" }
+internal val TO_LONG_CUSTOM_UUID = { shortUUID: String -> "F000$shortUUID$LONG_CUSTOM_UUID_BASE" }
 
 fun String?.toUUID() = if (this != null) UUID.fromString(fixUUID(this)) else null
 fun String?.toCustomUUID() = if (this != null) UUID.fromString(fixCustomUUID(this)) else null
+fun UUID.twoByte() = (mostSignificantBits ushr 32 and 0xFFFF).toInt()
+fun UUID.fourByte() = (mostSignificantBits ushr 32 and 0xFFFFFFFF).toInt()
 
 internal fun fixUUID(uuid: String) = when (uuid.length) {
     4 -> TO_LONG_UUID(uuid)

@@ -212,6 +212,14 @@ interface ReadAndWriteCharDSL<Svc> : CharDSL<Svc> {
 }
 
 /**
+ * A Pair containing the chunk/batch-size and an(other) large byte-array to be chunked:
+ *
+ * * [Pair.first] The batch-size
+ * * [Pair.second] A (large) byte-array that will be chopped up in chunks of 'Pair.first' bytes.
+ */
+typealias BatchInfo = Pair<Int, ByteArray>
+
+/**
  * When creating a new [BleService], the properties that represent its BLE characteristics must
  * be instances of [BleCharValue] that **delegate** to implementations of this [BleCharHandlerDSL] interface.
  *
@@ -240,6 +248,15 @@ interface BleCharHandlerDSL<Val : Any> {
      * The lambda that transforms a value of the property's type [Val] into a [ByteArray].
      */
     var toByteArray: ((Val) -> ByteArray)?
+
+    /**
+     * The lambda that transforms a value of the property's value [Val] and raw-value [ByteArray] into
+     * a [BatchInfo] instance:
+     *
+     * This gives the specific [BleService] a chance to chop up the incoming raw-value in a way
+     * that will be understood by the remote BLE device.
+     */
+    var toBatchInfo: ((Val, ByteArray) -> BatchInfo)
 
     operator
     fun getValue(service: BleService<*>, prop: KProperty<*>): BleCharValue<Val>

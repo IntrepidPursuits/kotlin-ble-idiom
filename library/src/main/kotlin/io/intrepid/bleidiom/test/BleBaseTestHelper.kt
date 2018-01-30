@@ -11,7 +11,7 @@ import io.reactivex.plugins.RxJavaPlugins
  */
 open class BleBaseTestHelper {
     open fun setup(testClass: Any, factory: BleTestModules.Companion.() -> Unit = {}) {
-        BleTestModules.setup(factory)
+        BleTestModules.setup(testClass, factory)
 
         val scheduler: Scheduler = LibTestKodein.with(testClass).instance()
 

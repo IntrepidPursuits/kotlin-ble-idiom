@@ -2,6 +2,9 @@ package io.intrepid.bleidiom.services
 
 /**
  */
+import arrow.core.getOrElse
+import arrow.syntax.option.none
+import arrow.syntax.option.some
 import io.intrepid.bleidiom.*
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -37,7 +40,7 @@ private class DataClassAssembler<T : StructData>(val data: ByteArray? = null, or
     val buffer = if (data != null) ByteBuffer.wrap(data, 0, data.size).order(order)!! else null
     var start = -1
 
-    private lateinit var packingInfo: Array<Int>
+    private lateinit var packingInfo: IntArray
     private lateinit var dataClassComponents: Array<KFunction<*>?>
 
     private val sync = data ?: Any()
@@ -70,9 +73,12 @@ private class DataClassAssembler<T : StructData>(val data: ByteArray? = null, or
 
             dataClassComponents.forEachIndexed { index, function ->
                 buffer.position(start)
-                var size = packingInfo[index]
 
-                val componentClass = function!!.returnType.jvmErasure
+                val returnType = function!!.returnType
+                val componentClass = returnType.jvmErasure
+
+                var size = calcSize(packingInfo[index], componentClass)
+
                 componentValues[index] = when {
                     componentClass == Byte::class -> readFromBuffer(buffer, size, false).toByte().fixSign(size)
                     componentClass == Short::class -> readFromBuffer(buffer, size, false).toShort().fixSign(size)
@@ -80,7 +86,19 @@ private class DataClassAssembler<T : StructData>(val data: ByteArray? = null, or
                     componentClass == Long::class -> readFromBuffer(buffer, size, false).toLong().fixSign(size)
                     componentClass == Float::class -> readFromBuffer(buffer, size, true).toFloat()
                     componentClass == Double::class -> readFromBuffer(buffer, size, true).toDouble()
-                    componentClass == ByteArray::class -> ByteArray(size, { idx -> data[start + idx] })
+                    componentClass == ByteArray::class -> ByteArray(size) { idx ->
+                        if (start + idx < data.size) data[start + idx]
+                        else 0
+                    }
+                    componentClass.isSubclassOf(Enum::class) -> {
+                        val ordinal = readFromBuffer(buffer, size, false).toInt().fixSign(abs(size))
+                        try {
+                            componentClass.java.enumConstants[ordinal]
+                        } catch (e: Exception) {
+                            if (returnType.isMarkedNullable) null
+                            else throw Exception("StructData could not get enum-value $componentClass[$ordinal]", e)
+                        }
+                    }
                     componentClass == String::class -> {
                         val stringLength = (start until data.size)
                                 .firstOrNull { data[it] == 0.toByte() }
@@ -104,7 +122,10 @@ private class DataClassAssembler<T : StructData>(val data: ByteArray? = null, or
                         size = structSize
                         struct
                     }
-                    else -> throw Exception("StructData does not support property class $componentClass")
+                    else -> {
+                        if (returnType.isMarkedNullable) null
+                        else throw Exception("StructData does not support property class $componentClass")
+                    }
                 }
 
                 start += abs(size)
@@ -122,11 +143,12 @@ private class DataClassAssembler<T : StructData>(val data: ByteArray? = null, or
             val value = if (dataObject != null) function!!.call(dataObject) else null
 
             buffer?.position(start)
-            var size = abs(packingInfo[index])
+            var size = calcSize(abs(packingInfo[index]), value)
 
             when (value) {
                 is Number -> buffer?.let { writeToBuffer(value, it, size, (value is Float) || (value is Double)) }
                 is ByteArray -> buffer?.put(value, 0, min(size, value.size))
+                is Enum<*> -> buffer?.let { writeToBuffer(value.ordinal, it, size, false) }
                 is String -> {
                     if (size == 0) {
                         size = value.length + 1
@@ -138,8 +160,7 @@ private class DataClassAssembler<T : StructData>(val data: ByteArray? = null, or
                     size = if (data != null) {
                         val order = buffer?.order() ?: BLE_DEFAULBLE_BYTE_ORDER
                         factory.toByteArray(value, data, order, start)
-                    }
-                    else {
+                    } else {
                         factory.sizeOf(value)
                     }
                 }
@@ -157,8 +178,6 @@ private class DataClassAssembler<T : StructData>(val data: ByteArray? = null, or
                                 size = factory.sizeOf(valueClass = structClass)
                             }
                         }
-                    } else {
-                        throw Exception("StructData does not support property class ${value::class}")
                     }
                 }
             }
@@ -167,22 +186,62 @@ private class DataClassAssembler<T : StructData>(val data: ByteArray? = null, or
 
         return start - offset
     }
+
+    private fun calcSize(size: Int, value: Any?): Int {
+        return if (size != 0) size
+        else value?.packingInfo?.size ?: 0
+    }
+
+    private fun calcSize(size: Int, klass: KClass<out Any>): Int {
+        return if (size != 0) size
+        else klass.packingInfo?.size ?: 0
+    }
 }
 
 abstract class StructData {
-    interface Factory {
-        fun sizeOf(value: StructData? = null, valueClass: KClass<out StructData>? = null): Int
+    interface PackingInfo {
+        /**
+         * Holds the size in bytes that can represent all values of the class implementing this interface.
+         * If it is 0, the size is unknown.
+         */
+        val size: Int
+    }
+
+    interface Factory : PackingInfo {
+        fun sizeOf(value: StructData? = null, valueClass: KClass<out StructData>? = null): Int = size
 
         fun fromByteArray(dataClass: KClass<out StructData>, bytes: ByteArray, order: ByteOrder = BLE_DEFAULBLE_BYTE_ORDER, offset: Int = 0): StructData
 
-        fun fromByteArrayWithSize(dataClass: KClass<out StructData>, bytes: ByteArray, order: ByteOrder = BLE_DEFAULBLE_BYTE_ORDER, offset: Int = 0): Pair<StructData,Int>
+        fun fromByteArrayWithSize(dataClass: KClass<out StructData>, bytes: ByteArray, order: ByteOrder = BLE_DEFAULBLE_BYTE_ORDER, offset: Int = 0): Pair<StructData, Int>
 
         fun toByteArray(value: StructData, bytes: ByteArray, order: ByteOrder = BLE_DEFAULBLE_BYTE_ORDER, offset: Int = 0): Int
 
-        val packingInfo: Array<Int>
+        override val size
+            get() = packingInfo
+                    .fold(0.some()) { sum, i -> if (i == 0) none() else sum.map { it + abs(i) } }
+                    .getOrElse { 0 }
+
+        val packingInfo: IntArray
     }
 
-    abstract class DataFactory: Factory {
+    abstract class NoDataFactory: Factory {
+        final override fun sizeOf(value: StructData?, valueClass: KClass<out StructData>?) = 0
+
+        @Suppress("UNCHECKED_CAST")
+        final override fun fromByteArray(dataClass: KClass<out StructData>, bytes: ByteArray, order: ByteOrder, offset: Int) =
+                fromByteArrayWithSize(dataClass, bytes, order, offset).first
+
+        @Suppress("UNCHECKED_CAST")
+        final override fun fromByteArrayWithSize(dataClass: KClass<out StructData>, bytes: ByteArray, order: ByteOrder, offset: Int): Pair<StructData, Int> =
+                dataClass.primaryConstructor!!.call() to 0
+
+        final override fun toByteArray(value: StructData, bytes: ByteArray, order: ByteOrder, offset: Int) = 0
+
+        final override val packingInfo = intArrayOf()
+        final override val size = 0
+    }
+
+    abstract class DataFactory : Factory {
         override fun sizeOf(value: StructData?, valueClass: KClass<out StructData>?) = if (value != null) {
             DataClassAssembler<StructData>().deconstruct(value)
         } else {
@@ -194,14 +253,14 @@ abstract class StructData {
                 fromByteArrayWithSize(dataClass, bytes, order, offset).first
 
         @Suppress("UNCHECKED_CAST")
-        override fun fromByteArrayWithSize(dataClass: KClass<out StructData>, bytes: ByteArray, order: ByteOrder, offset: Int): Pair<StructData,Int> =
+        override fun fromByteArrayWithSize(dataClass: KClass<out StructData>, bytes: ByteArray, order: ByteOrder, offset: Int): Pair<StructData, Int> =
                 DataClassAssembler<StructData>(bytes, order, offset).construct(dataClass)
 
         override fun toByteArray(value: StructData, bytes: ByteArray, order: ByteOrder, offset: Int) =
                 DataClassAssembler<StructData>(bytes, order, offset).deconstruct(value)
     }
 
-    abstract class SealedFactory: Factory {
+    abstract class SealedFactory : Factory {
         @Suppress("UNCHECKED_CAST")
         final override fun fromByteArray(dataClass: KClass<out StructData>, bytes: ByteArray, order: ByteOrder, offset: Int) =
                 fromByteArrayWithSize(dataClass, bytes, order, offset).first
@@ -226,38 +285,41 @@ abstract class StructData {
     }
 }
 
+val Any.packingInfo get() = this::class.packingInfo
+
+val KClass<out Any>.packingInfo get() = this.companionObjectInstance as? StructData.PackingInfo
+
 val StructData.factory get() = this::class.factory
 
 @Suppress("UNCHECKED_CAST")
-val KClass<out StructData>.factory get() : StructData.Factory {
-    var struct: KClass<out StructData>? = this
-    var compObj = struct?.factoryOrNull
-    while (compObj == null && struct != null) {
-        struct = struct.superclasses.asSequence()
-                .firstOrNull { it.isSubclassOf(StructData::class) } as KClass<out StructData>?
-        compObj = struct?.factoryOrNull
+val KClass<out StructData>.factory
+    get() : StructData.Factory {
+        var struct: KClass<out StructData>? = this
+        var compObj = struct?.factoryOrNull
+        while (compObj == null && struct != null) {
+            struct = struct.superclasses.asSequence()
+                    .firstOrNull { it.isSubclassOf(StructData::class) } as KClass<out StructData>?
+            compObj = struct?.factoryOrNull
+        }
+
+        return compObj ?: throw NotImplementedError("Factory Companion Object of ${this} not found")
     }
 
-    return compObj ?: throw NotImplementedError("Factory Companion Object of ${this} not found")
-}
-
 @Suppress("UNCHECKED_CAST")
-private val KClass<out StructData>.factoryOrNull get() = this.companionObjectInstance  as? StructData.Factory
+private val KClass<out StructData>.factoryOrNull
+    get() = this.companionObjectInstance  as? StructData.Factory
 
-abstract class ArrayWithLength(
-) : StructData() {
-    abstract class Factory(val sizeSize: Int): DataFactory() {
+abstract class ArrayWithLength(private val size: Number) : StructData() {
+    abstract class Factory(private val sizeSize: Int) : DataFactory() {
         override fun sizeOf(value: StructData?, valueClass: KClass<out StructData>?) = when (value) {
             is ArrayWithLength -> with(value) { sizeSize + payload.size }
             else -> sizeSize
         }
 
         override fun toByteArray(value: StructData, bytes: ByteArray, order: ByteOrder, offset: Int) = with(value as ArrayWithLength) {
-            toNumberByteArray(size.toShort(), bytes, order, offset, sizeSize)
+            toNumberByteArray(size, bytes, order, offset, sizeSize)
             with(payload) {
-                for (i in 0 until size) {
-                    bytes[offset + sizeSize + i] = this[i]
-                }
+                System.arraycopy(this, 0, bytes, offset + sizeSize, size)
                 sizeSize + size
             }
         }
@@ -268,26 +330,22 @@ abstract class ArrayWithLength(
             return create(size, payload) to (sizeSize + size)
         }
 
-        override val packingInfo = arrayOf(sizeSize, 0)
+        override val packingInfo = intArrayOf(sizeSize, 0)
 
-        val sizeClass: KClass<out Number> = when(sizeSize) {
+        private val sizeClass: KClass<out Number> = when (sizeSize) {
             1 -> Byte::class
             2 -> Short::class
             4 -> Int::class
-            8 -> Long::class
             else -> throw IllegalStateException("Invalid value for property sizeSize: $sizeSize")
         }
 
         protected abstract fun create(size: Int, payload: ByteArray): ArrayWithLength
     }
 
-    abstract val size: Int
     abstract val payload: ByteArray
 
-    override fun equals(other: Any?): Boolean {
-
+    final override fun equals(other: Any?): Boolean {
         if (this === other) return true
-        if (javaClass != other?.javaClass) return false
 
         other as ArrayWithLength
 
@@ -297,54 +355,44 @@ abstract class ArrayWithLength(
         return true
     }
 
-    override fun hashCode(): Int {
-        var result = size
+    final override fun hashCode(): Int {
+        var result = size.toInt()
         result = 31 * result + Arrays.hashCode(payload)
         return result
     }
 }
 
+@Suppress("ArrayInDataClass") // equals/hashCode are implemented in base class
 data class ArrayWithByteLength(
-        override val size: Int = 0,
-        override val payload: ByteArray = ByteArray(size)
-) : ArrayWithLength() {
+        override val payload: ByteArray = ByteArray(0)
+) : ArrayWithLength(payload.size.toByte()) {
     companion object : ArrayWithLength.Factory(1) {
-        override fun create(size: Int, payload: ByteArray) = ArrayWithByteLength(size, payload)
+        override fun create(size: Int, payload: ByteArray) = ArrayWithByteLength(payload)
     }
 }
 
+@Suppress("ArrayInDataClass") // equals/hashCode are implemented in base class
 data class ArrayWithShortLength(
-        override val size: Int = 0,
-        override val payload: ByteArray = ByteArray(size)
-) : ArrayWithLength() {
+        override val payload: ByteArray = ByteArray(0)
+) : ArrayWithLength(payload.size.toShort()) {
     companion object : ArrayWithLength.Factory(2) {
-        override fun create(size: Int, payload: ByteArray) = ArrayWithShortLength(size, payload)
+        override fun create(size: Int, payload: ByteArray) = ArrayWithShortLength(payload)
     }
 }
 
+@Suppress("ArrayInDataClass") // equals/hashCode are implemented in base class
 data class ArrayWithIntLength(
-        override val size: Int = 0,
-        override val payload: ByteArray = ByteArray(size)
-) : ArrayWithLength() {
+        override val payload: ByteArray = ByteArray(0)
+) : ArrayWithLength(payload.size) {
     companion object : ArrayWithLength.Factory(4) {
-        override fun create(size: Int, payload: ByteArray) = ArrayWithIntLength(size, payload)
-    }
-}
-
-data class ArrayWithLongLength(
-        override val size: Int = 0,
-        override val payload: ByteArray = ByteArray(size)
-) : ArrayWithLength() {
-    companion object : ArrayWithLength.Factory(8) {
-        override fun create(size: Int, payload: ByteArray) = ArrayWithLongLength(size, payload)
+        override fun create(size: Int, payload: ByteArray) = ArrayWithIntLength(payload)
     }
 }
 
 @Suppress("UNCHECKED_CAST")
 fun <T : ArrayWithLength> ByteArray.withLength(sizeSize: Int): T = when (sizeSize) {
-    1 -> ArrayWithByteLength(size, this)
-    2 -> ArrayWithShortLength(size, this)
-    4 -> ArrayWithIntLength(size, this)
-    8 -> ArrayWithLongLength(size, this)
+    1 -> ArrayWithByteLength(this)
+    2 -> ArrayWithShortLength(this)
+    4 -> ArrayWithIntLength(this)
     else -> throw IllegalArgumentException("Invalid value for parameter sizeSize: $sizeSize")
 } as T

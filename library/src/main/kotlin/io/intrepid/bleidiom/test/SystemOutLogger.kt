@@ -1,8 +1,9 @@
 package io.intrepid.bleidiom.test
 
-import android.util.Log
 import io.intrepid.bleidiom.log.LogLevel
 import io.intrepid.bleidiom.log.LoggerImpl
+import java.io.ByteArrayOutputStream
+import java.io.PrintStream
 
 private const val DEFAULT_TAG = "LOGGER"
 
@@ -24,11 +25,19 @@ class SystemOutLogger : LoggerImpl(LogLevel.VERBOSE) {
 
     override fun writeException(level: LogLevel, throwable: Throwable, format: String?, vararg args: Any) {
         if (format != null) {
-            printer(level).printf("$tag: $format\n${Log.getStackTraceString(throwable)}", args)
+            printer(level).printf("$tag: $format\n${getStackTraceString(throwable)}", args)
         } else {
-            printer(level).printf("$tag: ${Log.getStackTraceString(throwable)}")
+            printer(level).printf("$tag: ${getStackTraceString(throwable)}")
         }
     }
 
     private fun printer(level: LogLevel) = if (level >= LogLevel.ERROR) System.err else System.out
+
+    private fun getStackTraceString(t: Throwable): String {
+        val stringBytes = ByteArrayOutputStream()
+        val writer = PrintStream(stringBytes)
+        t.printStackTrace(writer)
+        writer.flush()
+        return String(stringBytes.toByteArray())
+    }
 }

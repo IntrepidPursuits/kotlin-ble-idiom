@@ -37,6 +37,6 @@ data class ConnectionParams(
         val timeoutMultiplier: Int
 ) : StructData() {
     companion object : StructData.DataFactory() {
-        override val packingInfo = arrayOf(2, 2, 2, 2)
+        override val packingInfo = intArrayOf(2, 2, 2, 2)
     }
 }
