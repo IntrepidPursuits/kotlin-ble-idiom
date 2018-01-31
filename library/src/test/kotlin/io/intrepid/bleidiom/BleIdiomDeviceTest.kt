@@ -193,7 +193,7 @@ class BleIdiomDeviceTest {
 
         val testObs = TestObserver<RxBleConnection>()
 
-        serviceDevice.sharedConnection.subscribe(testObs)
+        serviceDevice.sharedConnection.mapTry().subscribe(testObs)
         Thread.sleep((expectedCount + 1) * delay)
 
         testObs.assertNotComplete()
@@ -233,7 +233,7 @@ class BleIdiomDeviceTest {
 
         val testObs = TestObserver<RxBleConnection>()
 
-        serviceDevice.sharedConnection.subscribe(testObs)
+        serviceDevice.sharedConnection.mapTry().subscribe(testObs)
         testObs.awaitCount(1) {}
 
         testObs.assertNotComplete()
@@ -270,7 +270,7 @@ class BleIdiomDeviceTest {
 
         val testObs = TestObserver<RxBleConnection>()
 
-        serviceDevice.sharedConnection.subscribe(testObs)
+        serviceDevice.sharedConnection.mapTry().subscribe(testObs)
 
         var emitterCount = 1
         var connectionCount = 1
@@ -333,7 +333,7 @@ class BleIdiomDeviceTest {
 
         val testObs = TestObserver<RxBleConnection>()
 
-        serviceDevice.sharedConnection.subscribe(testObs)
+        serviceDevice.sharedConnection.mapTry().subscribe(testObs)
 
         var emitterCount = 1
         val connectionCount = 1

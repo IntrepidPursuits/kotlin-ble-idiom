@@ -20,7 +20,6 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.powermock.modules.junit4.PowerMockRunner
-import org.reactivestreams.Subscriber
 import java.util.concurrent.TimeUnit
 import kotlin.test.assertEquals
 
@@ -38,85 +37,6 @@ class RepeatWhileTests {
     @After
     fun tearDown() {
         testHelper.tearDown()
-    }
-
-    @Test
-    fun dummy() {
-        var pubSub: Subscriber<in Nothing>? = null
-        val errorPub = Observable.fromPublisher<Nothing> {
-            System.out.println("New ErrorPub")
-            pubSub = it
-        }.doOnDispose {
-            System.out.println("Dispose ErrorPub")
-            pubSub = null
-        }.doOnTerminate {
-                    System.out.println("Terminate ErrorPub")
-                    pubSub = null
-                }
-
-        val interval = Observable.interval(0, 200, TimeUnit.MILLISECONDS, testScheduler)
-                .doOnSubscribe { System.out.println("*** Subscribed") }
-                .doOnTerminate { System.out.println("*** Terminated") }
-                .doOnDispose { System.out.println("*** Disposed") }
-
-        val interruptableInterval = interval.mergeWith(errorPub)
-                .doOnSubscribe { System.out.println("--- Subscribed") }
-                .doOnTerminate { System.out.println("--- Terminated") }
-                .doOnDispose { System.out.println("--- Disposed") }
-                .share()
-                .onErrorReturn { -1 }
-
-        val s1 = interruptableInterval.subscribe(
-                {
-                    System.out.println("1 New tick at $it")
-                },
-                {
-                    System.out.println("2 $it")
-                }
-        )
-
-        val s2 = interruptableInterval.subscribe(
-                {
-                    System.out.println("2 New tick at $it")
-                },
-                {
-                    System.out.println("2 $it")
-                }
-        )
-
-        val s3 = interruptableInterval.subscribe(
-                {
-                    System.out.println("3 New tick at $it")
-                },
-                {
-                    System.out.println("3 $it")
-                }
-        )
-
-        for (i in 0..10) {
-            if (i == 6) {
-                pubSub!!.onError(Exception("KILL"))
-            }
-            testScheduler.advanceTimeBy(100, TimeUnit.MILLISECONDS)
-        }
-
-        val s4 = interruptableInterval.subscribe(
-                {
-                    System.out.println("4 New tick at $it")
-                },
-                {
-                    System.out.println("4 $it")
-                }
-        )
-
-        for (i in 0..10) {
-            testScheduler.advanceTimeBy(100, TimeUnit.MILLISECONDS)
-        }
-
-        s1.dispose()
-        s2.dispose()
-        s3.dispose()
-        s4.dispose()
     }
 
     @Test

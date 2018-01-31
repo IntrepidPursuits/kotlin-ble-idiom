@@ -172,18 +172,18 @@ internal class BleCharValueDelegate<Val : Any>() : BleCharHandlerDSL<Val> {
     init {
         backingField.readAction = {
             letMany(uuid, service?.sharedConnection, fromByteArray) { charUUID, connection, transform ->
-                connection.flatMap {
+                connection.take(1).flatMapTry {
                     it.readCharacteristic(charUUID)
                             .toRx2()
                             .map { byteArray -> transform(byteArray) }
                             .doOnNext { backingField.currentValue = it }
-                }.take(1)
+                }
             } ?: Observable.never()
         }
 
         backingField.observeAction = { isIndication ->
             letMany(uuid, service?.sharedConnection, fromByteArray) { charUUID, connection, transform ->
-                connection.flatMap {
+                connection.flatMapTry {
                     val setupObserver = {
                         if (isIndication) it.setupIndication(charUUID)
                         else it.setupNotification(charUUID)
@@ -200,8 +200,8 @@ internal class BleCharValueDelegate<Val : Any>() : BleCharHandlerDSL<Val> {
         backingField.writeAction = { value ->
             val mtu = service?.mtuSize ?: MIN_MTU_SIZE
             letMany(uuid, service?.sharedConnection, toByteArray) { charUUID, connection, transform ->
-                backingField.inFlightValue = value
-                connection.flatMap {
+                val inflightValue = value
+                connection.take(1).flatMapTry {
                     val bytes = transform(value)
                     val writeObs = if (bytes.size > mtu) {
                         val batchInfo = toBatchInfo(value, bytes)
@@ -214,9 +214,10 @@ internal class BleCharValueDelegate<Val : Any>() : BleCharHandlerDSL<Val> {
                         it.writeCharacteristic(charUUID, bytes)
                     }
                     writeObs.toRx2()
+                            .doOnSubscribe { backingField.inFlightValue = inflightValue }
                             .map { _ -> value }
                             .doOnNext { backingField.currentValue = it }
-                }.take(1)
+                }
             } ?: Observable.never()
         }
     }

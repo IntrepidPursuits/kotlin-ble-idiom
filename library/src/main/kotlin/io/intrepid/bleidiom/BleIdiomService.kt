@@ -4,7 +4,6 @@
 package io.intrepid.bleidiom
 
 import android.bluetooth.BluetoothGattService
-import arrow.data.Try
 import com.github.salomonbrys.kodein.instance
 import com.github.salomonbrys.kodein.with
 import io.intrepid.bleidiom.log.LogLevel
@@ -84,14 +83,7 @@ open class BleService<Svc : BleService<Svc>> : BleConfigureDSL<Svc> {
 
     internal lateinit var device: BleIdiomDevice
 
-    internal val sharedConnection
-        get() = device.sharedConnection
-                .map {
-                    when (it) {
-                        is Try.Success -> it.value
-                        is Try.Failure -> throw it.exception
-                    }
-                }
+    internal val sharedConnection get() = device.sharedConnection
 
     private val subscriptionsContainer = CompositeDisposable()
 
@@ -133,7 +125,7 @@ open class BleService<Svc : BleService<Svc>> : BleConfigureDSL<Svc> {
      */
     fun retainConnection(onError: (Throwable) -> Unit = {}) =
             object : Closeable {
-                private val disposable = sharedConnection.subscribe({}, onError)
+                private val disposable = sharedConnection.subscribe { it.fold(onError, {}) }
 
                 override fun close() {
                     disposable.run { if (!isDisposed) dispose() }
@@ -153,14 +145,15 @@ open class BleService<Svc : BleService<Svc>> : BleConfigureDSL<Svc> {
     fun observeConnectionState() = device.observeConnectionState()
 
     fun discoverPrimaryServices(timeout: Long = 20_000) =
-            sharedConnection
-                    .flatMap { connection -> connection.discoverServices(timeout, TimeUnit.MILLISECONDS).toRx2() }
+            sharedConnection.take(1).flatMapTry { it.discoverServices(timeout, TimeUnit.MILLISECONDS).toRx2() }
                     .flatMapIterable { deviceServices -> deviceServices.bluetoothGattServices }
-                    .filter { gattSvc ->
-                        gattSvc.type == BluetoothGattService.SERVICE_TYPE_PRIMARY &&
-                                Registration.hasService(gattSvc.uuid)
+                    .filter { gatt ->
+                        gatt.type == BluetoothGattService.SERVICE_TYPE_PRIMARY &&
+                                Registration.hasService(gatt.uuid)
                     }
-                    .map { gattService -> ServiceDeviceFactory.obtainClientDevice<BleService<*>>(gattService.uuid, device) }
+                    .map { gatt ->
+                        ServiceDeviceFactory.obtainClientDevice<BleService<*>>(gatt.uuid, device)
+                    }
                     ?: Observable.empty()
 
     /**

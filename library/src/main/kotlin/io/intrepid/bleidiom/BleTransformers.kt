@@ -5,8 +5,10 @@
  */
 package io.intrepid.bleidiom
 
+import arrow.data.Try
 import com.polidea.rxandroidble.RxBleConnection
 import io.intrepid.bleidiom.services.StructData
+import io.reactivex.Observable
 import java.math.BigInteger
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -176,3 +178,20 @@ fun <A, B, C, D, R> letMany(a: A?, b: B?, c: C?, d: D?, block: (A, B, C, D) -> R
 
 fun <A, B, C, D, E, R> letMany(a: A?, b: B?, c: C?, d: D?, e: E?, block: (A, B, C, D, E) -> R) =
         if (a != null && b != null && c != null && d != null && e != null) block(a, b, c, d, e) else null
+
+
+/* Some extensions functions helping with Arrow's [Try] type when dealing with Rx Observable */
+
+fun <T : Any> Observable<Try<T>>.mapTry(): Observable<T> = flatMapTry { Observable.just(it) }
+
+fun <T : Any> Observable<T>.mapToTry() = map { Try.pure(it) }.onErrorReturn { Try.raise(it) }!!
+
+fun <T : Any, R: Any> Observable<Try<T>>.flatMapTry(
+        error: (Throwable) -> Observable<R> = {
+            Observable.error(it)
+        },
+        success: (T) -> Observable<R> = {
+            @Suppress("UNCHECKED_CAST")
+            it as Observable<R>
+        }
+) = flatMap { value -> value.fold({ error(it) }, { success(it) }) }!!

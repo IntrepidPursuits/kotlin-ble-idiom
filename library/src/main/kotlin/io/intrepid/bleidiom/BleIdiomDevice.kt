@@ -6,6 +6,7 @@ import com.github.salomonbrys.kodein.with
 import com.polidea.rxandroidble.RxBleConnection
 import com.polidea.rxandroidble.RxBleDevice
 import com.polidea.rxandroidble.exceptions.BleDisconnectedException
+import com.polidea.rxandroidble.exceptions.BleException
 import io.intrepid.bleidiom.log.LogLevel
 import io.intrepid.bleidiom.log.Logger
 import io.intrepid.bleidiom.module.LibKodein
@@ -15,6 +16,7 @@ import io.reactivex.*
 import io.reactivex.Observable
 import io.reactivex.functions.BiFunction
 import java.util.*
+import kotlin.collections.set
 
 typealias BleConnection = Try<RxBleConnection>
 
@@ -179,7 +181,7 @@ sealed class ConnectionState {
     override fun toString() = this::class.simpleName!!
 }
 
-class BleForcedDisconnectedException(message: String) : Exception(message)
+class BleForcedDisconnectedException(message: String) : BleException(message)
 
 private class ConnectionSharingAdapter<T> : ObservableTransformer<T, T> {
     private val sync = Any()
