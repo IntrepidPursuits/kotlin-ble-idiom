@@ -10,14 +10,20 @@ def productFlavor = "";
 def buildVariant = "${productFlavor.capitalize()}${buildType.capitalize()}";
 def buildVariantDirectory = productFlavor.length() > 0 ? "${productFlavor}/${buildType}" : buildType
 
-println("!!!!! ${buildDir}/intermediates/classes/${buildVariantDirectory}")
+def sourceDir = 'src/main/kotlin'
+def classDir = "${buildDir}/tmp/kotlin-classes/${buildVariantDirectory}"
+def classDirJava = "${buildDir}/intermediates/classes/${buildVariantDirectory}"
+def unitTestCoverageData = "${buildDir}/jacoco/test${buildVariant}UnitTest.exec"
 
-def coverageSourceDirsJava = files(['src/main/java'])
-def coverageSourceDirsKotlin = files(['src/main/kotlin'])
-def coverageSourceDirs = files(coverageSourceDirsJava, coverageSourceDirsKotlin)
+def coverageSourceDirs = files([sourceDir])
+
+def coverageClassDirs = fileTree(
+        dir: classDir,
+        excludes: []
+)
 
 def coverageClassDirsJava = fileTree(
-        dir: "${buildDir}/intermediates/classes/${buildVariantDirectory}",
+        dir: classDirJava,
         excludes: ['**/R.class',
                    '**/R$*.class',
                    '**/BuildConfig.*',
@@ -26,14 +32,6 @@ def coverageClassDirsJava = fileTree(
                    '**/*_ViewBind*' // ButterKnife auto generated classes
         ]
 )
-def coverageClassDirsKotlin = fileTree(
-        dir: "${buildDir}/tmp/kotlin-classes/${buildVariantDirectory}",
-        excludes: []
-)
-def coverageClassDirs = files(coverageClassDirsJava, coverageClassDirsKotlin)
-
-def unitTestCoverageData = "${buildDir}/jacoco/test${buildVariant}UnitTest.exec"
-//def instrumentationTestCoverageData = "${buildDir}/spoon/${buildVariantDirectory}/coverage/merged-coverage.ec"
 
 // testCoverageEnabled messes up debugging/etc, so we want it disabled most of times.
 // unit test coverage reports seems to work fine even with the flag disabled, but the
@@ -41,35 +39,11 @@ def unitTestCoverageData = "${buildDir}/jacoco/test${buildVariant}UnitTest.exec"
 def startTaskNames = gradle.startParameter.taskNames
 def isRunningInstrumentationCoverage = startTaskNames.contains('instrumentationTestCoverage') || startTaskNames.contains('testCoverage')
 
-// Run both unit and instrumentation tests and merge the result of both tests into a single report
-task testCoverage(type: JacocoReport, dependsOn: ["test${buildVariant}UnitTest"/*, "spoon${buildVariant}AndroidTest"*/]) {
-    sourceDirectories = coverageSourceDirs
-    classDirectories = coverageClassDirs
-    executionData = files([unitTestCoverageData/*, instrumentationTestCoverageData*/])
-
-    doLast {
-        println "You can view the coverage report at:"
-        println "${buildDir}/reports/jacoco/testCoverage/html/index.html"
-    }
-
-    reports {
-        xml.enabled true
-        xml.destination "${buildDir}/reports/jacoco/testCoverage/coverage.xml"
-    }
-}
-
-// Run and generate the report for the unit tests. The test report only includes the coverage data for
-// the presenter and utils classes since we generally don't unit test any Android related classes
+// Run and generate the report for the  Kotlin unit tests.
 task unitTestCoverage(type: JacocoReport, dependsOn: "test${buildVariant}UnitTest") {
     sourceDirectories = coverageSourceDirs
-    classDirectories = fileTree(
-            dir: "${buildDir}/intermediates/classes/${buildVariantDirectory}",
-            includes: ['**/*Presenter*',
-                       '**/utils/*'
-                       // Add any additional testable classes here
-            ]
-    )
-    executionData = files("${buildDir}/jacoco/test${buildVariant}UnitTest.exec")
+    classDirectories = files(coverageClassDirs, coverageClassDirsJava)
+    executionData = files(unitTestCoverageData)
 
     doLast {
         println "You can view the coverage report at:"
@@ -78,26 +52,9 @@ task unitTestCoverage(type: JacocoReport, dependsOn: "test${buildVariant}UnitTes
 
     reports {
         xml.enabled true
-        xml.destination "${buildDir}/reports/jacoco/unitTestCoverage/coverage.xml"
+        xml.destination "${buildDir}/reports/jacoco/unitTestCoverage/jacoco.xml"
     }
 }
-
-// Run and generate the report for the instrumentation test
-//task instrumentationTestCoverage(type: JacocoReport/*, dependsOn: "spoon${buildVariant}AndroidTest"*/) {
-//    sourceDirectories = coverageSourceDirs
-//    classDirectories = coverageClassDirs
-//    executionData = files(instrumentationTestCoverageData)
-//
-//    doLast {
-//        println "You can view the coverage report at:"
-//        println "${buildDir}/reports/jacoco/instrumentationTestCoverage/html/index.html"
-//    }
-//
-//    reports {
-//        xml.enabled true
-//        xml.destination "${buildDir}/reports/jacoco/instrumentationTestCoverage/coverage.xml"
-//    }
-//}
 
 android {
     buildTypes {
@@ -115,7 +72,3 @@ android {
         }
     }
 }
-
-//spoon {
-//    codeCoverage = isRunningInstrumentationCoverage
-//}

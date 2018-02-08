@@ -5,6 +5,7 @@ package io.intrepid.bleidiom
 
 import io.intrepid.bleidiom.util.toRx2
 import io.reactivex.Observable
+import io.reactivex.Single
 import java.util.*
 import kotlin.reflect.*
 import kotlin.reflect.full.primaryConstructor
@@ -43,17 +44,17 @@ internal object Registration {
 @Suppress("ClassName")
 object configureBleService : BleIdiomDSL {
 
-    infix
-    override fun <Svc : BleService<Svc>> forClass(bleServiceClass: KClass<Svc>) = WithConfiguration<Svc>(bleServiceClass)
+    override infix fun <Svc : BleService<Svc>> forClass(bleServiceClass: KClass<Svc>) =
+            WithConfiguration<Svc>(bleServiceClass)
 
     override fun clearConfigurations() {
         Registration.clearAll()
     }
 
-    class WithConfiguration<Svc>(private val bleServiceClass: KClass<out BleService<*>>) : BleIdiomDSL.ForClassWith<Svc> {
+    class WithConfiguration<Svc>(private val bleServiceClass: KClass<out BleService<*>>)
+        : BleIdiomDSL.ForClassWith<Svc> {
 
-        infix
-        override fun with(dsl: BleServiceDSL<Svc>.() -> Unit) = Registration.registerDSL(bleServiceClass) {
+        override infix fun with(dsl: BleServiceDSL<Svc>.() -> Unit) = Registration.registerDSL(bleServiceClass) {
             BleServiceDSLImpl(createPrototype()).apply {
                 dsl()
             }
@@ -65,8 +66,7 @@ object configureBleService : BleIdiomDSL {
 }
 
 internal class BleServiceDSLImpl<Svc>(internal val svcPrototype: Svc) : BleServiceDSL<Svc> {
-    lateinit
-    override var uuid: String
+    override lateinit var uuid: String
 
     override fun custom(uuid: String) = fixCustomUUID(uuid)
 
@@ -172,13 +172,14 @@ internal class BleCharValueDelegate<Val : Any>() : BleCharHandlerDSL<Val> {
     init {
         backingField.readAction = {
             letMany(uuid, service?.sharedConnection, fromByteArray) { charUUID, connection, transform ->
-                connection.take(1).flatMapTry {
+                connection.firstOrError().flatMapTry {
                     it.readCharacteristic(charUUID)
                             .toRx2()
+                            .singleOrError()
                             .map { byteArray -> transform(byteArray) }
-                            .doOnNext { backingField.currentValue = it }
+                            .doOnSuccess { backingField.currentValue = it }
                 }
-            } ?: Observable.never()
+            } ?: Single.error(IllegalStateException("readAction is null"))
         }
 
         backingField.observeAction = { isIndication ->
@@ -194,31 +195,36 @@ internal class BleCharValueDelegate<Val : Any>() : BleCharHandlerDSL<Val> {
                             .map { byteArray -> transform(byteArray) }
                             .doOnNext { backingField.currentValue = it }
                 }
-            } ?: Observable.never()
+            } ?: Observable.error(IllegalStateException("observeAction is null"))
         }
 
         backingField.writeAction = { value ->
             val mtu = service?.mtuSize ?: MIN_MTU_SIZE
             letMany(uuid, service?.sharedConnection, toByteArray) { charUUID, connection, transform ->
-                val inflightValue = value
-                connection.take(1).flatMapTry {
+                connection.firstOrError().flatMapTry {
                     val bytes = transform(value)
                     val writeObs = if (bytes.size > mtu) {
-                        val batchInfo = toBatchInfo(value, bytes)
-                        it.createNewLongWriteBuilder()
-                                .setCharacteristicUuid(charUUID)
-                                .setMaxBatchSize(batchInfo.first)
-                                .setBytes(batchInfo.second)
-                                .build()
+                        val (batchSize, batchBytes) = toBatchInfo(value, bytes)
+                        if (batchSize in 1..mtu) {
+                            it.createNewLongWriteBuilder()
+                                    .setCharacteristicUuid(charUUID)
+                                    .setMaxBatchSize(batchSize)
+                                    .setBytes(batchBytes)
+                                    .build()
+                        } else {
+                            rx.Observable.error(IllegalStateException("toBatchInfo must return a " +
+                                    "batch-size between 1 and $mtu, but is $batchSize instead."))
+                        }
                     } else {
                         it.writeCharacteristic(charUUID, bytes)
                     }
                     writeObs.toRx2()
-                            .doOnSubscribe { backingField.inFlightValue = inflightValue }
+                            .doOnSubscribe { backingField.inFlightValue = value }
+                            .singleOrError()
                             .map { _ -> value }
-                            .doOnNext { backingField.currentValue = it }
+                            .doOnSuccess { backingField.currentValue = it }
                 }
-            } ?: Observable.never()
+            } ?: Single.error(IllegalStateException("writeAction is null"))
         }
     }
 
@@ -226,8 +232,7 @@ internal class BleCharValueDelegate<Val : Any>() : BleCharHandlerDSL<Val> {
         dsl()
     }
 
-    operator
-    override fun getValue(service: BleService<*>, prop: KProperty<*>): BleCharValue<Val> {
+    override operator fun getValue(service: BleService<*>, prop: KProperty<*>): BleCharValue<Val> {
         synchronized(backingField) {
             if (uuid == null) {
                 uuid = charUUID(service, prop).toUUID()
@@ -237,8 +242,7 @@ internal class BleCharValueDelegate<Val : Any>() : BleCharHandlerDSL<Val> {
         return backingField
     }
 
-    operator
-    override fun setValue(service: BleService<*>, prop: KProperty<*>, value: BleCharValue<Val>) {
+    override operator fun setValue(service: BleService<*>, prop: KProperty<*>, value: BleCharValue<Val>) {
         synchronized(backingField) {
             if (uuid == null) {
                 uuid = charUUID(service, prop).toUUID()
@@ -260,8 +264,9 @@ internal class BleCharValueDelegate<Val : Any>() : BleCharHandlerDSL<Val> {
 /**
  * Builds a BLE-characteristic, ties a BleCharValue property to a characteristic-UUID.
  */
-private abstract class CharBuilder<Svc>(protected val serviceDSL: BleServiceDSLImpl<Svc>) : CharDSL<Svc> {
-    override final val prototype = serviceDSL.svcPrototype
+private abstract class CharBuilder<Svc>(protected val serviceDSL: BleServiceDSLImpl<Svc>)
+    : CharDSL<Svc> {
+    final override val prototype = serviceDSL.svcPrototype
 
     protected var propName: String? = null
     protected var charUUID: String? = null
@@ -280,21 +285,19 @@ private abstract class CharBuilder<Svc>(protected val serviceDSL: BleServiceDSLI
 /**
  * Builds a readable BLE-characteristic, ties a BleCharValue property to a 'read' characteristic-UUID.
  */
-private class ReadableCharBuilder<Svc>(service: BleServiceDSLImpl<Svc>) : CharBuilder<Svc>(service), ReadableCharDSL<Svc> {
-    infix
-    override fun from(uuid: String) = apply {
+private class ReadableCharBuilder<Svc>(service: BleServiceDSLImpl<Svc>)
+    : CharBuilder<Svc>(service), ReadableCharDSL<Svc> {
+    override infix fun from(uuid: String) = apply {
         charUUID = uuid.toUUID().toString()
         buildIfReady(serviceDSL.readCharacteristicsMap)
     }
 
-    infix
-    override fun into(property: KProperty1<Svc, BleCharValue<*>>) = apply {
+    override infix fun into(property: KProperty1<Svc, BleCharValue<*>>) = apply {
         propName = property.name
         buildIfReady(serviceDSL.readCharacteristicsMap)
     }
 
-    infix
-    override fun into(property: KProperty0<BleCharValue<*>>) = apply {
+    override infix fun into(property: KProperty0<BleCharValue<*>>) = apply {
         propName = property.name
         buildIfReady(serviceDSL.readCharacteristicsMap)
     }
@@ -303,21 +306,19 @@ private class ReadableCharBuilder<Svc>(service: BleServiceDSLImpl<Svc>) : CharBu
 /**
  * Builds a writable BLE-characteristic, ties a mutable BleCharValue property to a 'write' characteristic-UUID.
  */
-private class WritableCharBuilder<Svc>(service: BleServiceDSLImpl<Svc>) : CharBuilder<Svc>(service), WritableCharDSL<Svc> {
-    infix
-    override fun from(property: KMutableProperty1<Svc, out BleCharValue<*>>) = apply {
+private class WritableCharBuilder<Svc>(service: BleServiceDSLImpl<Svc>)
+    : CharBuilder<Svc>(service), WritableCharDSL<Svc> {
+    override infix fun from(property: KMutableProperty1<Svc, out BleCharValue<*>>) = apply {
         propName = property.name
         buildIfReady(serviceDSL.writeCharacteristicsMap)
     }
 
-    infix
-    override fun from(property: KMutableProperty0<out BleCharValue<*>>) = apply {
+    override infix fun from(property: KMutableProperty0<out BleCharValue<*>>) = apply {
         propName = property.name
         buildIfReady(serviceDSL.writeCharacteristicsMap)
     }
 
-    infix
-    override fun into(uuid: String) = apply {
+    override infix fun into(uuid: String) = apply {
         charUUID = uuid.toUUID().toString()
         buildIfReady(serviceDSL.writeCharacteristicsMap)
     }

@@ -41,6 +41,8 @@ import kotlin.reflect.jvm.isAccessible
  */
 open class BleMockClientBaseTestHelper : BleBaseTestHelper() {
     companion object {
+        const val deviceName = "MOCK_DEVICE"
+
         internal var macAddress: String? = null
 
         fun <T : BleService<T>> buildDeviceService(
@@ -86,6 +88,7 @@ open class BleMockClientBaseTestHelper : BleBaseTestHelper() {
 
             return deviceBuilder
                     .deviceMacAddress(BleMockClientBaseTestHelper.macAddress!!)
+                    .deviceName(deviceName)
                     .addService(service.dsl.uuid.toUUID()!!, charListBuilder.build())
                     .rssi(0)
                     .scanRecord(ByteArray(0))
@@ -403,3 +406,9 @@ val BleIdiomDevice.rxMock get(): Any = this.device
  * Returns a (mocked) [BleIdiomDevice] from a [BleService]
  */
 val BleService<*>.device get() = this.device
+
+var BleService<*>.scanningRecord
+    get() = this.scanRecord
+    set(value) {
+        this.scanRecord = value
+    }

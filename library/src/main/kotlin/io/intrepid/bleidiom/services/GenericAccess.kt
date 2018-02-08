@@ -30,13 +30,31 @@ class GenericAccess : BleService<GenericAccess>() {
     }
 }
 
+/**
+ * Mimics the C/C++
+ *
+ *      typedef struct {
+ *          uint16_t minConnectionInterval;
+ *          uint16_t maxConnectionInterval;
+ *          uint16_t slaveLatency;
+ *          uint16_t timeoutMultiplier;
+ *      } ConnectionParams_t
+ */
 data class ConnectionParams(
         val minConnectionInterval: Int,
         val maxConnectionInterval: Int,
         val slaveLatency: Int,
         val timeoutMultiplier: Int
 ) : StructData() {
-    companion object : StructData.DataFactory() {
-        override val packingInfo = intArrayOf(2, 2, 2, 2)
+    companion object : StructData.DataFactory {
+        override val packingInfo = arrayOf<Number>(UINT16, UINT16, UINT16, UINT16)
     }
+}
+
+
+fun test(svcGA: GenericAccess) {
+svcGA[GenericAccess::preferredConnectionParams] =
+        svcGA[GenericAccess::preferredConnectionParams].map {
+            it.copy(slaveLatency = 2 * it.slaveLatency)
+        }
 }

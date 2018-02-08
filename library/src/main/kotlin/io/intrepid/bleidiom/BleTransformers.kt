@@ -9,6 +9,7 @@ import arrow.data.Try
 import com.polidea.rxandroidble.RxBleConnection
 import io.intrepid.bleidiom.services.StructData
 import io.reactivex.Observable
+import io.reactivex.Single
 import java.math.BigInteger
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -51,9 +52,21 @@ fun numberByteArraySize(value: Number) = when (value) {
     is Byte -> 1
     is Short -> 2
     is Int -> 4
+    is Long -> 8
     is BigInteger -> (value.bitLength() shr 3) + 1
     is Float -> 4
-    else -> 8
+    is Double -> 8
+    else -> 4
+}
+
+fun numberByteArraySize(klass: KClass<out Number>) = when (klass) {
+    Byte::class -> 1
+    Short::class -> 2
+    Int::class -> 4
+    Long::class -> 8
+    Float::class -> 4
+    Double::class -> 8
+    else -> 4
 }
 
 fun toNumberByteArray(value: Number,
@@ -193,5 +206,15 @@ fun <T : Any, R: Any> Observable<Try<T>>.flatMapTry(
         success: (T) -> Observable<R> = {
             @Suppress("UNCHECKED_CAST")
             it as Observable<R>
+        }
+) = flatMap { value -> value.fold({ error(it) }, { success(it) }) }!!
+
+fun <T : Any, R: Any> Single<Try<T>>.flatMapTry(
+        error: (Throwable) -> Single<R> = {
+            Single.error(it)
+        },
+        success: (T) -> Single<R> = {
+            @Suppress("UNCHECKED_CAST")
+            it as Single<R>
         }
 ) = flatMap { value -> value.fold({ error(it) }, { success(it) }) }!!

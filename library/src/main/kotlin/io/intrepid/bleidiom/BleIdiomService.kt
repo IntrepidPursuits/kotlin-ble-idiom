@@ -10,10 +10,7 @@ import io.intrepid.bleidiom.log.LogLevel
 import io.intrepid.bleidiom.log.Logger
 import io.intrepid.bleidiom.module.LibKodein
 import io.intrepid.bleidiom.util.toRx2
-import io.reactivex.Flowable
-import io.reactivex.Observable
-import io.reactivex.Observer
-import io.reactivex.Single
+import io.reactivex.*
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.disposables.Disposable
 import java.io.Closeable
@@ -24,6 +21,9 @@ import kotlin.reflect.full.primaryConstructor
 
 /**
  * The subclass of every BLE Service that can be configured and registered by the [BleIdiomDSL].
+ *
+ * @sample io.intrepid.bleidiom.services.registerGenericAccess
+ * @sample io.intrepid.bleidiom.services.GenericAccess
  *
  * [Svc] is the subclass itself.
  */
@@ -57,29 +57,63 @@ open class BleService<Svc : BleService<Svc>> : BleConfigureDSL<Svc> {
         Registration.getServiceDSL(this)!!
     }
 
-    val macAddress get() = device.macAddress!!
+    /**
+     * MAC-address of the device of this service (lowercase)
+     */
+    val macAddress get() = device.macAddress
+
+    /**
+     * Name of the device of this service or an empty string if it has no name.
+     */
+    val name get() = device.name
+
+    /**
+     * RSSI obtained during scanning of this service. It is 0 if the value is not known.
+     */
     var rssi
         get() = device.rssi
         internal set(value) {
             device.rssi = value
         }
 
+    /**
+     * Max size of raw data that can be sent over BLE to the device of this service.
+     * Usually this value is 20, but could've been negotiated to a higher value.
+     */
     val mtuSize get() = device.mtuSize
 
+    /**
+     * The connection retry strategy.
+     * When the device disconnects, a re-connection is attempted a few times.
+     * Whether a re-connection is attemted, how soon and how often is determined by the value
+     * set to this property.
+     *
+     * The property's value is a lambda that take three parameters, String, Boolean and Int.
+     * * The String is the MAC-address of the service's device
+     * * The Boolean is the value of the device's [BleIdiomDevice.autoConnect]
+     * * The Int is the number of retries attemted since the last disconnect.
+     *
+     * The lambda must return a `Single<Boolean>` that emits a boolean value.
+     * * When the emitted boolean value that is received is true, a re-connect is attempted.
+     * * When the emitted boolean value that is received is false, the disconnect-error is
+     *   propagated through the listening observers.
+     * * Note that delaying the emission of a `true` value through this `Single<Boolean>` allows
+     *   for a delay in a re-connect attempt.
+     */
     var connectionRetryStrategy: (String, Boolean, Int) -> Single<Boolean>
         get() = throw IllegalAccessError("connectionRetryStrategy can only be set")
         set(value) {
             device.retryStrategy = value
         }
 
-    var scanRecord: ByteArray
+    var writeObserverFactory: (KMutableProperty1<out BleService<*>, out Any>) -> Observer<out Any> =
+            { _ -> EmptyObserver }
+
+    internal var scanRecord: ByteArray
         get() = throw IllegalAccessError("scanRecord can only be set")
         set(value) {
             device.scanRecord = value
         }
-
-    var writeObserverFactory: (KMutableProperty1<out BleService<*>, out Any>) -> Observer<*> =
-            { _ -> EmptyObserver }
 
     internal lateinit var device: BleIdiomDevice
 
@@ -161,7 +195,7 @@ open class BleService<Svc : BleService<Svc>> : BleConfigureDSL<Svc> {
      * Observable emits the read value.
      *
      * @param property A readable property of this [BleService]
-     * @return [Observable] that will emit the read value.
+     * @return [Single] that will emit the read value.
      */
     operator
     fun <Val : Any> get(property: KProperty1<Svc, BleCharValue<Val>>) = property.get(asSvc())()
@@ -219,17 +253,7 @@ open class BleService<Svc : BleService<Svc>> : BleConfigureDSL<Svc> {
         with(property) {
             @Suppress("UNCHECKED_CAST")
             get(asSvc())(valueStream)
-                    .compose { upstream ->
-                        var disposable: Disposable? = null
-                        upstream
-                                .doOnSubscribe {
-                                    disposable = if (subscriptionsContainer.add(it)) it else null
-                                }
-                                .doOnTerminate {
-                                    disposable?.let { subscriptionsContainer.delete(it) }
-                                    disposable = null
-                                }
-                    }
+                    .compose(AutoUnsubscribeTransformer())
                     .subscribe(writeObserverFactory(this) as Observer<Val>)
         }
     }
@@ -258,7 +282,7 @@ open class BleService<Svc : BleService<Svc>> : BleConfigureDSL<Svc> {
  * Each [BleService]'s property that represents a BLE Service's characteristic and needs to be configured by
  * the [BleIdiomDSL] must be of this type.
  */
-class BleCharValue<Val : Any>() {
+class BleCharValue<Val : Any> {
     val value: Val?
         get() = synchronized(this) {
             return inFlightValue ?: currentValue
@@ -281,37 +305,43 @@ class BleCharValue<Val : Any>() {
             field = value
         }
 
-    internal lateinit var readAction: () -> Observable<Val>
-    internal lateinit var writeAction: (Val) -> Observable<Val>
+    internal lateinit var readAction: () -> Single<Val>
+    internal lateinit var writeAction: (Val) -> Single<Val>
     internal lateinit var observeAction: (Boolean) -> Observable<Val>
 
     /**
-     * Creates a new BLE characteristic property-value.
-     * @param value The new value for this property.
-     */
-    constructor(value: Val) : this() {
-        this.currentValue = value
-    }
-
-    /**
      * Reads a value from the remote BLE characteristic and returns an Observable.
-     * @return An [Observable] that will emit the read value upon success.
+     * @return An [Single] that will emit the read value upon success.
      */
     operator fun invoke() = synchronized(this) { readAction() }
 
     /**
      * Write this value to the remote BLE characteristic and returns an Observable.
      * @param value The value to write to the BLE characteristic.
-     * @return An [Observable] that will complete upon success.
-     * Depending upon the remote BLE characteristic, it may emit a value as well.
+     * @return An [Single] that will complete upon success.
      */
     operator fun invoke(value: Val) = synchronized(this) { writeAction(value) }
 
-    operator fun invoke(value: Single<Val>) = invoke(value.toObservable())
+    /**
+     * Emits a value to the remote BLE characteristic and returns an Observable.
+     * @param value The value to write to the BLE characteristic.
+     * @return An [Single] that will complete upon success.
+     */
+    operator fun invoke(value: Single<Val>) = value.flatMap { invoke(it) }!!
 
+    /**
+     * Emits values to the remote BLE characteristic and returns an Observable.
+     * @param valueStream The value to write to the BLE characteristic.
+     * @return An [Observable] that will complete upon successful writing of the values.
+     */
     operator fun invoke(valueStream: Flowable<Val>) = invoke(valueStream.toObservable())
 
-    operator fun invoke(valueStream: Observable<Val>) = valueStream.concatMap { invoke(it) }!!
+    /**
+     * Emits values to the remote BLE characteristic and returns an Observable.
+     * @param valueStream The value to write to the BLE characteristic.
+     * @return An [Observable] that will complete upon successful writing of the values.
+     */
+    operator fun invoke(valueStream: Observable<Val>) = valueStream.concatMap { invoke(it).toObservable() }!!
 
     /**
      * Returns an observable that can be watched when the remote BLE characteristic is notified
@@ -349,6 +379,14 @@ fun <reified Val : Any> bleChunkedCharHandler(crossinline body: (Val, ByteArray)
 fun <Val : Any> bleCharHandler(body: BleCharHandlerDSL<Val>.() -> Unit): BleCharHandlerDSL<Val> =
         BleCharValueDelegate(body)
 
+private class AutoUnsubscribeTransformer<T> : ObservableTransformer<T, T> {
+    lateinit var disposable: Disposable
+
+    override fun apply(upstream: Observable<T>) = upstream
+            .doOnSubscribe { disposable = it }
+            .doFinally { if (!disposable.isDisposed) disposable.dispose() }!!
+}
+
 private object EmptyObserver : Observer<Any> {
     private val logger = LibKodein.with(EmptyObserver::class).instance<Logger>()
 
@@ -362,6 +400,6 @@ private object EmptyObserver : Observer<Any> {
     }
 
     override fun onError(e: Throwable) {
-        logger.log(LogLevel.ERROR, e, "Error received.")
+        logger.log(LogLevel.WARN, e, "Error received.")
     }
 }
