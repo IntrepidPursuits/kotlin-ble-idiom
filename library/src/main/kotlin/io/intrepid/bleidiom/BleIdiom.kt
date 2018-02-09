@@ -215,7 +215,7 @@ interface ReadAndWriteCharDSL<Svc> : CharDSL<Svc> {
  * A Pair containing the chunk/batch-size and an(other) large byte-array to be chunked:
  *
  * * [Pair.first] The batch-size
- * * [Pair.second] A (large) byte-array that will be chopped up in chunks of 'Pair.first' bytes.
+ * * [Pair.second] A (large) byte-array that will be chopped up in chunks of [Pair.first] bytes.
  */
 typealias BatchInfo = Pair<Int, ByteArray>
 

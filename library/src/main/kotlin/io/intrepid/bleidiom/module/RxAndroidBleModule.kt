@@ -20,15 +20,16 @@ import java.util.concurrent.Executors
 val PublicBleModule = Kodein.Module {
     // Provides the public interface to clients of this ble-idiom library
     import(BleModule)
-    // Provides the private/internal interface to support the above [BleModule].
+    // Provides the private/internal interface to support the above BleModule.
     import(RxAndroidBleModule)
 }
 
 /**
- * This *internal* Kodein Module provides the *public* BleIdiom dependencies for libraries/apps that
+ * This Kodein Module provides the *public* BleIdiom dependencies for libraries/apps that
  * use this BleIdiom library. It provides for this public classes: *
  * - [BleScanner] instances (singleton).
  * - [BleIdiomDevice] instances (weak-multiton given a [RxBleDevice])
+ * - [Scheduler] instances for properly syncing shared connections
  *
  * Usage:
  *  * ```
@@ -43,7 +44,7 @@ private val BleModule = Kodein.Module {
 }
 
 /**
- * This *public* Kodein Module provides the *internal* RxAndroidBLE related classes and implementation.
+ * This Kodein Module provides the *internal* RxAndroidBLE related classes and implementation.
  * An app/library that uses this BleIdiom library must import this module or a mock version of it, as
  * long as it provides for instances of these classes:
  * - [RxBleClient] instances (singleton).

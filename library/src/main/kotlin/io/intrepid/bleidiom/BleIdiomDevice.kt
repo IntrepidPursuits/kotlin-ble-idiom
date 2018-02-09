@@ -31,8 +31,9 @@ class BleIdiomDevice internal constructor(internal val device: RxBleDevice) {
             get() = LibKodein.with(this).instance(TAG_EXECUTOR_SCHEDULER)
     }
 
-    internal val macAddress = device.macAddress
-    internal val name = device.name ?: ""
+    val macAddress = device.macAddress?.toLowerCase(Locale.US) ?: ""
+    val name = device.name ?: ""
+
     private val printName = "$macAddress($name)"
 
     @Volatile
@@ -150,10 +151,10 @@ class BleIdiomDevice internal constructor(internal val device: RxBleDevice) {
 
                     retryObs.flatMapObservable { retry ->
                         if (retry) {
-                            logger.log(LogLevel.DEBUG, "Trying to reconnect($retryCount) $this at ${Thread.currentThread().id}")
+                            logger.log(LogLevel.DEBUG, "Trying to reconnect($retryCount) to $this")
                             createConnection()
                         } else {
-                            logger.log(LogLevel.DEBUG, "Not trying to reconnect($retryCount) $this at ${Thread.currentThread().id}")
+                            logger.log(LogLevel.DEBUG, "Not trying to reconnect($retryCount) to $this")
                             Observable.just(brokenConnection)
                         }
                     }

@@ -57,7 +57,7 @@ class RxIfThenElseTransformer<T, R> private constructor(private val singleSubscr
     override fun apply(upstream: Observable<T>): ObservableSource<R> = upstream
             .doOnSubscribe {
                 if (singleSubscription && !singleSubscriptionGuard.compareAndSet(false, true)) {
-                    throw Exception("The RxIfThenElseTransformer can only be subsribed to once.")
+                    throw Exception("The RxIfThenElseTransformer can only be subscribed to once.")
                 }
             }
             .doOnDispose { if (singleSubscription) blocks.clear() }
@@ -72,7 +72,7 @@ class RxIfThenElseTransformer<T, R> private constructor(private val singleSubscr
     private fun indexOf(value: T) = blocks.indexOfFirst { it.first.apply(value) }
 
     class IfBuilder<T, R> internal constructor(private val singleSubscription: Boolean) {
-        var blocks = mutableListOf<Block<T, R>>()
+        val blocks = mutableListOf<Block<T, R>>()
 
         /**
          * Specifies a predicate that determines whether the next 'then' block will be executed or not.

@@ -4,9 +4,7 @@ import com.github.salomonbrys.kodein.*
 import com.polidea.rxandroidble.mockrxandroidble.RxBleClientMock
 import com.polidea.rxandroidble.mockrxandroidble.RxBleDeviceMock
 import io.intrepid.bleidiom.module.TAG_EXECUTOR_SCHEDULER
-import io.intrepid.bleidiom.services.ArrayWithShortLength
-import io.intrepid.bleidiom.services.StructData
-import io.intrepid.bleidiom.services.withLength
+import io.intrepid.bleidiom.services.*
 import io.intrepid.bleidiom.test.*
 import io.intrepid.bleidiom.test.BleTestModules.Companion.testKodeinOverrides
 import io.intrepid.bleidiom.util.RxLoop
@@ -86,8 +84,8 @@ internal class TestService : BleService<TestService>() {
 internal class TestService2 : BleService<TestService2>()
 
 internal data class ChunkedData(val data: ArrayWithShortLength = ArrayWithShortLength(), val totalSize: Int = 0) : StructData() {
-    companion object : StructData.DataFactory() {
-        override val packingInfo = intArrayOf(0, 2)
+    companion object : StructData.DataFactory {
+        override val packingInfo = arrayOf<Number>(0, UINT16)
     }
 }
 
@@ -236,7 +234,7 @@ class BleEndToEndTests {
         val testObserver = TestObserver<Any>()
 
         val device = ServiceDeviceFactory.obtainClientDevice<TestService>(serverDevice.uuid, serverDevice)
-        Observable.zip<Int, Int, Int, Int>(
+        Single.zip<Int, Int, Int, Int>(
                 device[TestService::number],
                 device[TestService::number],
                 device[TestService::number],
@@ -266,7 +264,7 @@ class BleEndToEndTests {
         val testObserver = TestObserver<Any>()
 
         val device = ServiceDeviceFactory.obtainClientDevice<TestService>(serverDevice.uuid, serverDevice)
-        Observable.zip<Int, Int, Int, Int>(
+        Single.zip<Int, Int, Int, Int>(
                 device[TestService::number],
                 device[TestService::number],
                 device[TestService::number],
@@ -380,7 +378,7 @@ class BleEndToEndTests {
                         next = {
                             responseObs.delay(100, TimeUnit.MILLISECONDS)
                                     .zipWith<ChunkedData, Pair<ChunkedData, Int>>(
-                                            requestObs(chunk).delay(20, TimeUnit.MILLISECONDS),
+                                            requestObs(chunk).delay(20, TimeUnit.MILLISECONDS).toObservable(),
                                             BiFunction { response, request -> Pair(request, response) }
                                     )
                                     .doOnNext { result -> state = result.second }
@@ -410,13 +408,15 @@ class BleEndToEndTests {
         testObserver.values().forEachIndexed { index, list ->
             val expectedChunk = chunks[index]
 
+            // Check that the last one has the good data
             val (goodData, goodAnswer) = list.last()
             assertEquals(OK_RESPONSE, goodAnswer)
             assertEquals(expectedChunk, goodData)
 
-            val wrongChunks = list.slice(0..list.lastIndex)
-            assert(wrongChunks.none { (_, answer) -> OK_RESPONSE == answer })
-            assert(wrongChunks.none { (data, _) -> expectedChunk != data })
+            // And check that the ones before the last one have incorrect data
+            val wrongChunks = list.slice(0 until list.lastIndex)
+            assertTrue(wrongChunks.none { (_, answer) -> OK_RESPONSE == answer })
+            assertTrue(wrongChunks.none { (data, _) -> expectedChunk != data })
         }
 
         val resultString = testObserver.values().fold("") { acc, list ->
@@ -645,11 +645,11 @@ class BleEndToEndTests {
 
     private fun writePeriodically(device: TestService, value: String) =
             Observable.interval(0, 200, TimeUnit.MILLISECONDS, testScheduler)
-                    .flatMap { device.string2(value) }
+                    .flatMapSingle { device.string2(value) }
 
     private fun readPeriodically(device: TestService) =
             Observable.interval(0, 200, TimeUnit.MILLISECONDS, testScheduler)
-                    .flatMap { device.string3() }
+                    .flatMapSingle { device.string3() }
 
     @Test
     fun test_data_object_assembly() {
@@ -731,7 +731,7 @@ class BleEndToEndTests {
 }
 
 sealed class Hello(val helloValue: Int) : StructData() {
-    companion object : StructData.SealedFactory() {
+    companion object : StructData.Factory {
         override fun fromByteArrayWithSize(dataClass: KClass<out StructData>, bytes: ByteArray, order: ByteOrder, offset: Int): Pair<StructData, Int> {
             return when (bytes[offset]) {
                 0.toByte() -> Hello1
@@ -744,15 +744,15 @@ sealed class Hello(val helloValue: Int) : StructData() {
             return size
         }
 
-        override val packingInfo = intArrayOf(1)
+        override val packingInfo = arrayOf<Number>(UINT8)
     }
 }
 
 object Hello1 : Hello(0)
 
 data class SubData(val byteVal: Byte, val number: Float, val id: String, val data: ByteArray, val hello: Hello = Hello1) : StructData() {
-    companion object : StructData.DataFactory() {
-        override val packingInfo = intArrayOf(1, 4, 11, 10, 0)
+    companion object : StructData.DataFactory {
+        override val packingInfo = arrayOf<Number>(UINT8, FLOAT, 11, 10, 0)
     }
 
     override fun equals(other: Any?): Boolean {
@@ -778,7 +778,7 @@ data class SubData(val byteVal: Byte, val number: Float, val id: String, val dat
 }
 
 data class TestData(val someValue: Int, val someOthervalue: Int, val subData: SubData?, val otherValue: String) : StructData() {
-    companion object : StructData.DataFactory() {
-        override val packingInfo = intArrayOf(1, -1, 0, 0)
+    companion object : StructData.DataFactory {
+        override val packingInfo = arrayOf<Number>(UINT8, INT8, 0, 0)
     }
 }

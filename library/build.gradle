@@ -2,7 +2,7 @@ apply plugin: 'com.android.library'
 apply plugin: 'com.github.dcendents.android-maven'
 apply plugin: 'kotlin-android'
 apply from: "../library_versions.gradle"
-// apply from: 'coverage.gradle'
+apply from: 'coverage.gradle'
 
 group = 'com.github.intrepidpursuits'
 
@@ -70,8 +70,10 @@ dependencies {
     implementation "io.reactivex:rxandroid:$rx1AndroidVersion"
     implementation "io.reactivex:rxkotlin:$rx1KotlinVersion"
 
-    implementation 'io.arrow-kt:arrow-core:0.5.5'
-    implementation 'io.arrow-kt:arrow-syntax:0.5.5'
+    implementation 'io.arrow-kt:arrow-core:0.6.0'
+    implementation 'io.arrow-kt:arrow-syntax:0.6.0'
+
+    implementation "at.favre.lib:bytes:0.4.6"
 
     implementation "com.github.akarnokd:rxjava2-interop:0.10.9"
 
