@@ -33,6 +33,7 @@ import kotlin.math.ceil
 import kotlin.math.min
 import kotlin.reflect.KClass
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.test.fail
 
@@ -582,26 +583,26 @@ class BleEndToEndTests {
             string2Observers += string2Obs
         }
 
-        // This means the first 5 pairs have BleForcedDisconnectedException errors
+        // This means the first 5 pairs have completed (connection killed)
         for (i in 0 until 5) {
-            bytesObservers[i].assertError { it is BleForcedDisconnectedException }
-            string2Observers[i].assertError { it is BleForcedDisconnectedException }
+            bytesObservers[i].assertComplete()
+            string2Observers[i].assertComplete()
         }
 
         // And the next 5 pairs are fine.
         for (i in 5 until 10) {
-            bytesObservers[i].assertNoErrors()
-            string2Observers[i].assertNoErrors()
+            bytesObservers[i].assertNotComplete()
+            string2Observers[i].assertNotComplete()
         }
 
         // Until we kill the connection now, once affecting all notif-observers....
         device.killCurrentConnection()
         testScheduler.triggerActions()
 
-        // This means that the last 5 pairs have BleForcedDisconnectedException errors now as well.
+        // This means that the last 5 pairs completed (connection killed) as well.
         for (i in 5 until 10) {
-            bytesObservers[i].assertError { it is BleForcedDisconnectedException }
-            string2Observers[i].assertError { it is BleForcedDisconnectedException }
+            bytesObservers[i].assertComplete()
+            string2Observers[i].assertComplete()
         }
     }
 
@@ -636,9 +637,9 @@ class BleEndToEndTests {
         testObserverRead1.assertValueCount(6)
         testObserverRead1.assertNoErrors()
 
-        // Notifications-observers, however, hold on to the connection as long as they are active.
-        assertTrue(error is BleForcedDisconnectedException)
-        testObserverNotif.assertError { it is BleForcedDisconnectedException }
+        // Notifications-observers complete when a connection has been killed.
+        assertNull(error)
+        testObserverNotif.assertComplete()
 
         retainer.close()
     }

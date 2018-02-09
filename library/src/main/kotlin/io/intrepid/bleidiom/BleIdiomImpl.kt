@@ -194,7 +194,7 @@ internal class BleCharValueDelegate<Val : Any>() : BleCharHandlerDSL<Val> {
                             .toRx2()
                             .map { byteArray -> transform(byteArray) }
                             .doOnNext { backingField.currentValue = it }
-                }
+                }.takeUntil(service!!.killedConnectionObs)
             } ?: Observable.error(IllegalStateException("observeAction is null"))
         }
 

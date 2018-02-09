@@ -119,6 +119,8 @@ open class BleService<Svc : BleService<Svc>> : BleConfigureDSL<Svc> {
 
     internal val sharedConnection get() = device.sharedConnection
 
+    internal val killedConnectionObs get() = device.killedConnectionObs
+
     private val subscriptionsContainer = CompositeDisposable()
 
     /**
@@ -169,7 +171,7 @@ open class BleService<Svc : BleService<Svc>> : BleConfigureDSL<Svc> {
     /**
      * Forces a disconnect not only from this service but from the remote BLE device itself.
      * Note that this will cause any other Observers that are using connections to the remote
-     * BLE device to terminate.
+     * BLE device to terminate (the observers' 'onComplete()' will be called).
      */
     fun killCurrentConnection() = device.killCurrentConnection()
 

@@ -6,7 +6,6 @@ import com.github.salomonbrys.kodein.with
 import com.polidea.rxandroidble.RxBleConnection
 import com.polidea.rxandroidble.RxBleDevice
 import com.polidea.rxandroidble.exceptions.BleDisconnectedException
-import com.polidea.rxandroidble.exceptions.BleException
 import io.intrepid.bleidiom.log.LogLevel
 import io.intrepid.bleidiom.log.Logger
 import io.intrepid.bleidiom.module.LibKodein
@@ -14,7 +13,7 @@ import io.intrepid.bleidiom.module.TAG_EXECUTOR_SCHEDULER
 import io.intrepid.bleidiom.util.toRx2
 import io.reactivex.*
 import io.reactivex.Observable
-import io.reactivex.functions.BiFunction
+import io.reactivex.subjects.PublishSubject
 import java.util.*
 import kotlin.collections.set
 
@@ -75,17 +74,9 @@ class BleIdiomDevice internal constructor(internal val device: RxBleDevice) {
     @Volatile
     private var retryCount = 0
 
-    // No it can't be private since the custom 'get' or 'set' won't be called if it is... weird but true...
-    @Suppress("MemberVisibilityCanBePrivate")
-    internal var killedConnectionPub: ObservableEmitter<Unit>? = null
-        get() = synchronized(killedConnectionObs) { field }
-        set(value) = synchronized(killedConnectionObs) { field = value }
+    private val killedConnectionPub = PublishSubject.create<Unit>()
 
-    private val killedConnectionObs = Observable.defer {
-        Observable.create<Unit> {
-            killedConnectionPub = it.apply { setCancellable { killedConnectionPub = null } }
-        }.startWith(Unit)
-    }
+    internal val killedConnectionObs: Observable<Unit> = killedConnectionPub
 
     private val connectionAdapter = ConnectionSharingAdapter<RxBleConnection>()
 
@@ -95,10 +86,7 @@ class BleIdiomDevice internal constructor(internal val device: RxBleDevice) {
     private val userState by lazy { mutableMapOf<String, Any?>() }
 
     internal fun killCurrentConnection() {
-        synchronized(killedConnectionObs) {
-            killedConnectionPub
-                    ?.onError(BleForcedDisconnectedException("Disconnected from $macAddress by force"))
-        }
+        killedConnectionPub.onNext(Unit)
     }
 
     /**
@@ -136,11 +124,8 @@ class BleIdiomDevice internal constructor(internal val device: RxBleDevice) {
                     }
 
     private fun establishKillableConnection() =
-            Observable.combineLatest(
-                    device.establishConnection(autoConnect).toRx2(),
-                    killedConnectionObs,
-                    BiFunction<RxBleConnection, Unit, RxBleConnection> { conn, _ -> conn }
-            )
+            device.establishConnection(autoConnect).toRx2()
+                    .takeUntil(killedConnectionObs)
 
     private fun handleError(brokenConnection: Try.Failure<RxBleConnection>) =
             when (brokenConnection.exception) {
@@ -181,8 +166,6 @@ sealed class ConnectionState {
 
     override fun toString() = this::class.simpleName!!
 }
-
-class BleForcedDisconnectedException(message: String) : BleException(message)
 
 private class ConnectionSharingAdapter<T> : ObservableTransformer<T, T> {
     private val sync = Any()
