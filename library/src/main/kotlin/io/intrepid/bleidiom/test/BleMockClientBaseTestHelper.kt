@@ -208,7 +208,7 @@ internal class ServerCharacteristics {
     }
 
     private val registeredChars: MutableList<TestableBluetoothGattCharacteristic<Any>> = mutableListOf()
-    private val registeredProps: MutableMap<String, TestableBluetoothGattCharacteristic<Any>> = mutableMapOf()
+    private val registeredProps: MutableMap<String, TestableBluetoothGattCharacteristic<Any>> = hashMapOf()
 
     internal operator fun get(charUUID: UUID) = registeredChars.firstOrNull { it.uuid == charUUID }
 
@@ -251,7 +251,7 @@ internal class ServerCharacteristics {
  */
 class TestableBluetoothGattCharacteristic<V : Any>(val uuid: UUID) {
     companion object {
-        private val registeredServerDevices = mutableMapOf<String, ServerCharacteristics>()
+        private val registeredServerDevices = hashMapOf<String, ServerCharacteristics>()
 
         internal operator fun get(macAddress: String): ServerCharacteristics {
             var serverChar = registeredServerDevices[macAddress]
