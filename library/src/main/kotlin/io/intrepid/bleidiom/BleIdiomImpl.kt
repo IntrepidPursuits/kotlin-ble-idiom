@@ -11,8 +11,8 @@ import kotlin.reflect.*
 import kotlin.reflect.full.primaryConstructor
 
 internal object Registration {
-    private val registeredDSLs = mutableMapOf<Int, BleServiceDSLImpl<*>>()
-    private val registeredServices = mutableMapOf<UUID, KClass<out BleService<*>>>()
+    private val registeredDSLs = hashMapOf<Int, BleServiceDSLImpl<*>>()
+    private val registeredServices = hashMapOf<UUID, KClass<out BleService<*>>>()
 
     internal fun registerDSL(bleServiceClass: KClass<out BleService<*>>, createServiceDSL: () -> BleServiceDSLImpl<*>) {
         val key = bleServiceClass.hashCode()
@@ -76,8 +76,8 @@ internal class BleServiceDSLImpl<Svc>(internal val svcPrototype: Svc) : BleServi
 
     override fun readAndWrite(dsl: BleServiceReadWriteDSL<Svc>.() -> Unit) = readWriteDSL.dsl()
 
-    internal val readCharacteristicsMap = mutableMapOf<String, String>()
-    internal val writeCharacteristicsMap = mutableMapOf<String, String>()
+    internal val readCharacteristicsMap = hashMapOf<String, String>()
+    internal val writeCharacteristicsMap = hashMapOf<String, String>()
 
     private val readDSL = object : BleServiceReadDSL<Svc> {
         override val data: ReadableCharDSL<Svc>

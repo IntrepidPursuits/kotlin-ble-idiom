@@ -733,8 +733,8 @@ private data class DataClassInfo(
 )
 
 private data class EnumClassInfo(
-        val enumMap: MutableMap<Int, Enum<*>> = mutableMapOf(),
-        val valueMap: MutableMap<Enum<*>, Int> = mutableMapOf()
+        val enumMap: MutableMap<Int, Enum<*>> = hashMapOf(),
+        val valueMap: MutableMap<Enum<*>, Int> = hashMapOf()
 ) {
     operator fun plusAssign(item: Pair<Int, Enum<*>>) {
         enumMap[item.first] = item.second

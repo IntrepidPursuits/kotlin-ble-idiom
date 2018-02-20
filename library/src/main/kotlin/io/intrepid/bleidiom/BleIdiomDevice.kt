@@ -44,23 +44,31 @@ class BleIdiomDevice internal constructor(internal val device: RxBleDevice) {
     @Volatile
     internal var autoConnect = false
 
-    internal var scanRecord: ByteArray? = null
+     internal var scanRecord: ByteArray? = null
         get() = synchronized(this) { field }
         set(value) = synchronized(this) {
-            if ((value == null) || !Arrays.equals(field, value)) {
-                parsedScanRecord = null
+            if (!Arrays.equals(field, value)) {
+                isParsedScanRecordDirty = true
             }
             field = value
         }
 
-    internal var parsedScanRecord: ScanRecordInfo? = null
-        get() = synchronized(this) {
-            scanRecord?.let {
-                val result = if (field == null) ScanRecordInfo.parseFromBytes(it) else field
-                field = result?.parseError?.let { throw it } ?: result
-                field
-            }
+    internal fun <S: Any> getParsedScanRecord(parser: (ScanRecordInfo) -> S?) = synchronized(this) {
+        val parse = isParsedScanRecordDirty
+        isParsedScanRecordDirty = false
+
+        if (parse) {
+            _parsedScanRecord = scanRecord?.let { parser(ScanRecordInfo.parseFromBytes(it)) }
         }
+
+        @Suppress("UNCHECKED_CAST")
+        _parsedScanRecord as S?
+    }
+
+    @Volatile
+    private var isParsedScanRecordDirty = true
+
+    private var _parsedScanRecord: Any? = null
 
     internal val sharedConnection by lazy {
         Observable.defer {
@@ -83,7 +91,7 @@ class BleIdiomDevice internal constructor(internal val device: RxBleDevice) {
     /**
      * Use this property to attach any piece of data to this particular BleIdiomDevice.
      */
-    private val userState by lazy { mutableMapOf<String, Any?>() }
+    private val userState by lazy { hashMapOf<String, Any?>() }
 
     internal fun killCurrentConnection() {
         killedConnectionPub.onNext(Unit)

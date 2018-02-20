@@ -140,11 +140,7 @@ data class ScanRecordInfo(
         /**
          * Method is copied from post lollipop [android.bluetooth.le.ScanRecord]
          */
-        fun parseFromBytes(scanRecord: ByteArray?): ScanRecordInfo? {
-            if (scanRecord == null) {
-                return null
-            }
-
+        fun parseFromBytes(scanRecord: ByteArray): ScanRecordInfo {
             var currentPos = 0
             var advertiseFlag = -1
             val serviceUuids = mutableListOf<UUID>()
@@ -152,8 +148,8 @@ data class ScanRecordInfo(
             var txPowerLevel = Integer.MIN_VALUE
             var exception: Exception? = null
 
-            val manufacturerData = mutableMapOf<Int, ByteArray>()
-            val serviceData = mutableMapOf<UUID, ByteArray>()
+            val manufacturerData = hashMapOf<Int, ByteArray>()
+            val serviceData = hashMapOf<UUID, ByteArray>()
 
             try {
                 while (currentPos < scanRecord.size) {

@@ -127,7 +127,7 @@ open class BleService<Svc : BleService<Svc>> : BleConfigureDSL<Svc> {
      * Returns an object containing data formed from the device's Scan-Record.
      * @return The parsed/transformed scan-record information or null if it was not set.
      */
-    fun <S : Any> getParsedScanRecord(): S? = mapScanRecord(device.parsedScanRecord)
+    fun <S : Any> getParsedScanRecord(): S? = device.getParsedScanRecord { mapScanRecord(it) }
 
     /**
      * Implement this function if parsing of scan-record information (bytes) is important

@@ -102,7 +102,7 @@ class BleTestModules {
 }
 
 private object TestScope : Scope<Any> {
-    private val registry = mutableMapOf<Int, ScopeRegistry>()
+    private val registry = hashMapOf<Int, ScopeRegistry>()
 
     override fun getRegistry(context: Any) = synchronized(registry) {
         registry.getOrPut(context.hashCode()) { ScopeRegistry() }

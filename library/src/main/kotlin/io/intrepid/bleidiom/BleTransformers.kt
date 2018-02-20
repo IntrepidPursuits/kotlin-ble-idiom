@@ -41,6 +41,18 @@ internal fun fixCustomUUID(uuid: String) = when (uuid.length) {
     else -> uuid
 }
 
+/**
+ * Gets the [ByteArray] version of a [String] MAC-address.
+ */
+val String.macAddress get() = ByteArray(6) { substring(it * 3, it * 3 + 2).toByte(16) }
+
+/**
+ * Gets the [String] version of a [ByteArray] MAC-address.
+ */
+val ByteArray.macAddress get() = fold("") { string, byte ->
+    string + (if (string.isEmpty()) "" else ":") + String.format(Locale.US, "%02x", byte)
+}
+
 fun toNumberByteArray(value: Number, order: ByteOrder = BLE_DEFAULBLE_BYTE_ORDER): ByteArray {
     val arraySize = numberByteArraySize(value)
     val source = ByteArray(arraySize)
