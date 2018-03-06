@@ -5,18 +5,17 @@ package io.intrepid.bleidiom
 
 import com.github.salomonbrys.kodein.instance
 import com.github.salomonbrys.kodein.with
-import com.polidea.rxandroidble.RxBleClient
-import com.polidea.rxandroidble.RxBleDevice
-import com.polidea.rxandroidble.scan.ScanResult
-import com.polidea.rxandroidble.scan.ScanSettings
+import com.polidea.rxandroidble2.RxBleClient
+import com.polidea.rxandroidble2.RxBleDevice
+import com.polidea.rxandroidble2.scan.ScanResult
+import com.polidea.rxandroidble2.scan.ScanSettings
 import io.intrepid.bleidiom.module.LibKodein
-import io.intrepid.bleidiom.util.toRx2
 import io.reactivex.Observable
 import io.reactivex.rxkotlin.ofType
 import io.reactivex.rxkotlin.toObservable
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.util.*
+import java.util.UUID
 import kotlin.reflect.KClass
 
 open class ServiceDeviceFactory {
@@ -80,7 +79,6 @@ class BleScanner(private val bleClient: RxBleClient) : ServiceDeviceFactory() {
     fun scanForServices(): Observable<out BleService<*>> {
         val settings: ScanSettings = ScanSettings.Builder().build()
         return bleClient.scanBleDevices(settings)
-                .toRx2()
                 .flatMap { scanResult -> createScannedDevice(scanResult) }
     }
 

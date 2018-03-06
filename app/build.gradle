@@ -2,12 +2,13 @@ apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 
 android {
-    compileSdkVersion 25
-    buildToolsVersion "26.0.2"
+    compileSdkVersion rootProject.ext.compileSdkVersion
+    buildToolsVersion rootProject.ext.buildToolsVersion
 
     defaultConfig {
-        minSdkVersion 21
-        targetSdkVersion 25
+        minSdkVersion rootProject.ext.minimumSdkVersion
+        //noinspection OldTargetApi
+        targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "0.0.1"
         multiDexEnabled true
@@ -40,8 +41,7 @@ afterEvaluate {
     }
 }
 
-def supportVersion = "25.4.0"
-def rxBleVersion = "1.4.2"
+def rxBleVersion = "1.5.0"
 def rx2Version = "2.1.6"
 def rx2AndroidVersion = "2.0.1"
 def rx2KotlinVersion = "2.1.0"
@@ -50,16 +50,12 @@ def kodeinVersion = "4.1.0"
 def kotlinTestVersion = kotlin_version
 def kotlinMockitoVersion = "1.5.0"
 
-def bleDslVersion = "e95298d"
-
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
     implementation project(':library')
-    //implementation "com.github.IntrepidPursuits:kotlin-ble-idiom:$bleDslVersion"
 
     implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
     implementation "org.jetbrains.kotlin:kotlin-reflect:$kotlin_version"
-    //implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:$kotlinx_coroutines_version"
 
     implementation "com.android.support:appcompat-v7:$supportVersion"
     implementation "com.android.support:design:$supportVersion"
@@ -74,10 +70,10 @@ dependencies {
 
     testImplementation "junit:junit:4.12"
     testImplementation "org.jetbrains.kotlin:kotlin-test-junit:$kotlinTestVersion"
-    testImplementation "org.powermock:powermock-module-junit4:1.7.3"
+    testImplementation "org.powermock:powermock-module-junit4:2.0.0-beta.5"
 
     testImplementation "com.github.salomonbrys.kodein:kodein-conf:$kodeinVersion"
     testImplementation "com.nhaarman:mockito-kotlin-kt1.1:$kotlinMockitoVersion"
-    testImplementation "org.powermock:powermock-api-mockito2:1.7.3"
-    testImplementation "com.polidea.rxandroidble:mockclient:$rxBleVersion"
+    testImplementation "org.powermock:powermock-api-mockito2:2.0.0-beta.5"
+    testImplementation "com.polidea.rxandroidble2:mockclient:$rxBleVersion"
 }

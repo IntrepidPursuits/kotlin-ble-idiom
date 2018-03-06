@@ -9,8 +9,11 @@ import com.github.salomonbrys.kodein.with
 import io.intrepid.bleidiom.log.LogLevel
 import io.intrepid.bleidiom.log.Logger
 import io.intrepid.bleidiom.module.LibKodein
-import io.intrepid.bleidiom.util.toRx2
-import io.reactivex.*
+import io.reactivex.Flowable
+import io.reactivex.Observable
+import io.reactivex.ObservableTransformer
+import io.reactivex.Observer
+import io.reactivex.Single
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.disposables.Disposable
 import java.io.Closeable
@@ -107,7 +110,7 @@ open class BleService<Svc : BleService<Svc>> : BleConfigureDSL<Svc> {
         }
 
     var writeObserverFactory: (KMutableProperty1<out BleService<*>, out Any>) -> Observer<out Any> =
-            { _ -> EmptyObserver }
+        { _ -> EmptyObserver }
 
     internal var scanRecord: ByteArray
         get() = throw IllegalAccessError("scanRecord can only be set")
@@ -144,7 +147,7 @@ open class BleService<Svc : BleService<Svc>> : BleConfigureDSL<Svc> {
      *              device-user-data.
      */
     fun <T : Any> modifyDeviceUserState(name: String, block: T?.() -> T?) =
-            device.modifyUserState(name, block)
+        device.modifyUserState(name, block)
 
     /**
      * Retains a connection to the device until [Closeable.close] is called on the return value.
@@ -160,13 +163,13 @@ open class BleService<Svc : BleService<Svc>> : BleConfigureDSL<Svc> {
      * @return The [Closeable] representing the retained connection.
      */
     fun retainConnection(onError: (Throwable) -> Unit = {}) =
-            object : Closeable {
-                private val disposable = sharedConnection.subscribe { it.fold(onError, {}) }
+        object : Closeable {
+            private val disposable = sharedConnection.subscribe { it.fold(onError, {}) }
 
-                override fun close() {
-                    disposable.run { if (!isDisposed) dispose() }
-                }
+            override fun close() {
+                disposable.run { if (!isDisposed) dispose() }
             }
+        }
 
     /**
      * Forces a disconnect not only from this service but from the remote BLE device itself.
@@ -181,16 +184,11 @@ open class BleService<Svc : BleService<Svc>> : BleConfigureDSL<Svc> {
     fun observeConnectionState() = device.observeConnectionState()
 
     fun discoverPrimaryServices(timeout: Long = 20_000) =
-            sharedConnection.take(1).flatMapTry { it.discoverServices(timeout, TimeUnit.MILLISECONDS).toRx2() }
-                    .flatMapIterable { deviceServices -> deviceServices.bluetoothGattServices }
-                    .filter { gatt ->
-                        gatt.type == BluetoothGattService.SERVICE_TYPE_PRIMARY &&
-                                Registration.hasService(gatt.uuid)
-                    }
-                    .map { gatt ->
-                        ServiceDeviceFactory.obtainClientDevice<BleService<*>>(gatt.uuid, device)
-                    }
-                    ?: Observable.empty()
+        sharedConnection.take(1).flatMapTry { it.discoverServices(timeout, TimeUnit.MILLISECONDS).toObservable() }
+            .flatMapIterable { it.bluetoothGattServices }
+            .filter { it.type == BluetoothGattService.SERVICE_TYPE_PRIMARY && Registration.hasService(it.uuid) }
+            .map { ServiceDeviceFactory.obtainClientDevice<BleService<*>>(it.uuid, device) }
+            ?: Observable.empty()
 
     /**
      * Requests to read a BLE characteristic's value from the remote device. Upon success, the returned
@@ -255,8 +253,8 @@ open class BleService<Svc : BleService<Svc>> : BleConfigureDSL<Svc> {
         with(property) {
             @Suppress("UNCHECKED_CAST")
             get(asSvc())(valueStream)
-                    .compose(AutoUnsubscribeTransformer())
-                    .subscribe(writeObserverFactory(this) as Observer<Val>)
+                .compose(AutoUnsubscribeTransformer())
+                .subscribe(writeObserverFactory(this) as Observer<Val>)
         }
     }
 
@@ -368,10 +366,10 @@ fun <reified Val : Any> bleCharHandler() = bleCharHandler<Val> { forClass = Val:
  */
 inline
 fun <reified Val : Any> bleChunkedCharHandler(crossinline body: (Val, ByteArray) -> Pair<Int, ByteArray>) =
-        bleCharHandler<Val> {
-            forClass = Val::class
-            toBatchInfo = { value, bytes -> body(value, bytes) }
-        }
+    bleCharHandler<Val> {
+        forClass = Val::class
+        toBatchInfo = { value, bytes -> body(value, bytes) }
+    }
 
 /**
  * @param body The code-block configuring the [ByteArray] transformations to and from value of type [Val].
@@ -379,14 +377,14 @@ fun <reified Val : Any> bleChunkedCharHandler(crossinline body: (Val, ByteArray)
  * for value of type [Val], where the [ByteArray] transformations are configured by the given code-block.
  */
 fun <Val : Any> bleCharHandler(body: BleCharHandlerDSL<Val>.() -> Unit): BleCharHandlerDSL<Val> =
-        BleCharValueDelegate(body)
+    BleCharValueDelegate(body)
 
 private class AutoUnsubscribeTransformer<T> : ObservableTransformer<T, T> {
     lateinit var disposable: Disposable
 
     override fun apply(upstream: Observable<T>) = upstream
-            .doOnSubscribe { disposable = it }
-            .doFinally { if (!disposable.isDisposed) disposable.dispose() }!!
+        .doOnSubscribe { disposable = it }
+        .doFinally { if (!disposable.isDisposed) disposable.dispose() }!!
 }
 
 private object EmptyObserver : Observer<Any> {

@@ -7,12 +7,13 @@ apply from: 'coverage.gradle'
 group = 'com.github.intrepidpursuits'
 
 android {
-    compileSdkVersion 25
-    buildToolsVersion "26.0.3"
+    compileSdkVersion rootProject.ext.compileSdkVersion
+    buildToolsVersion rootProject.ext.buildToolsVersion
 
     defaultConfig {
-        minSdkVersion 19
-        targetSdkVersion 25
+        minSdkVersion rootProject.ext.minimumSdkVersion
+        //noinspection OldTargetApi
+        targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "0.0.1"
         multiDexEnabled true
@@ -61,24 +62,20 @@ dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
     implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
     implementation "org.jetbrains.kotlin:kotlin-reflect:$kotlin_version"
-    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:0.21"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:0.22"
 
     implementation "com.android.support:appcompat-v7:$supportVersion"
 
-    implementation "com.polidea.rxandroidble:rxandroidble:$rxBleVersion"
-    implementation "io.reactivex:rxjava:$rx1Version"
-    implementation "io.reactivex:rxandroid:$rx1AndroidVersion"
-    implementation "io.reactivex:rxkotlin:$rx1KotlinVersion"
+    implementation "com.polidea.rxandroidble2:rxandroidble:$rxBleVersion"
 
     implementation 'io.arrow-kt:arrow-core:0.6.0'
     implementation 'io.arrow-kt:arrow-syntax:0.6.0'
 
     implementation "at.favre.lib:bytes:0.4.6"
 
-    implementation "com.github.akarnokd:rxjava2-interop:0.10.9"
-
     implementation "io.reactivex.rxjava2:rxandroid:$rx2AndroidVersion"
     implementation "io.reactivex.rxjava2:rxkotlin:$rx2KotlinVersion"
+    implementation 'com.jakewharton.rx2:replaying-share:2.0.1'
     api "io.reactivex.rxjava2:rxjava:$rx2Version"
 
     implementation "com.github.salomonbrys.kodein:kodein:$kodeinVersion"
@@ -92,7 +89,7 @@ dependencies {
     compileOnly "com.github.salomonbrys.kodein:kodein-conf:$kodeinVersion"
     compileOnly "com.nhaarman:mockito-kotlin-kt1.1:$kotlinMockitoVersion"
     compileOnly "org.powermock:powermock-api-mockito2:$powerMockVersion"
-    compileOnly "com.polidea.rxandroidble:mockclient:$rxBleVersion"
+    compileOnly "com.polidea.rxandroidble2:mockclient:$rxBleVersion"
 
     testImplementation "junit:junit:4.12"
     testImplementation "org.jetbrains.kotlin:kotlin-test-junit:$kotlinTestVersion"
@@ -102,5 +99,5 @@ dependencies {
     // actually run tests based on classes in 'io.intrepid.bleidiom.test'
     testImplementation "com.nhaarman:mockito-kotlin-kt1.1:$kotlinMockitoVersion"
     testImplementation "org.powermock:powermock-api-mockito2:$powerMockVersion"
-    testImplementation "com.polidea.rxandroidble:mockclient:$rxBleVersion"
+    testImplementation "com.polidea.rxandroidble2:mockclient:$rxBleVersion"
 }

@@ -3,7 +3,13 @@
  */
 package io.intrepid.bleidiom.app
 
-import io.intrepid.bleidiom.*
+import io.intrepid.bleidiom.BleCharHandlerDSL
+import io.intrepid.bleidiom.BleCharValue
+import io.intrepid.bleidiom.BleService
+import io.intrepid.bleidiom.bleCharHandler
+import io.intrepid.bleidiom.configureBleService
+import io.intrepid.bleidiom.toByteArrayNumber
+import io.intrepid.bleidiom.toNumberByteArray
 
 /**
  * Defines the BLE services that are used by this application.
@@ -13,8 +19,8 @@ fun defineBleServices() {
     // There are two ways of defining/configuring BLE services.
 
     // 1. Start DSL with the 'configureBleService' keyword (object).
-    // The percentage (0x3a19) and name (0x3a00) are readable BLE characteristics
-    // The name (0x3a00) is a writable BLE characteristic.
+    // The percentage (0x3a19) and serviceName (0x3a00) are readable BLE characteristics
+    // The serviceName (0x3a00) is a writable BLE characteristic.
     configureBleService forClass BatterijService::class with {
         uuid = "790a4cfa-4058-4922-93f6-d9a5e168cc60"
 
@@ -23,8 +29,8 @@ fun defineBleServices() {
         }
 
         readAndWrite {
-            data between { ::name } and "3a00"
-            //data between BatterijService::name and "3a00"
+            data between { ::serviceName } and "3a00"
+            //data between BatterijService::serviceName and "3a00"
         }
     }
 
@@ -62,12 +68,12 @@ class BatterijService : BleService<BatterijService>() {
     }
 
     /**
-     * Represents the read/write BLE characteristic that represents the service's name.
+     * Represents the read/write BLE characteristic that represents the service's serviceName.
      *
      * This is an example where the [BleCharHandlerDSL] implicitly sets the correct value for
      * [BleCharHandlerDSL.fromByteArray] and [BleCharHandlerDSL.toByteArray] based on the [BleCharValue]'s **Val** type.
      */
-    var name: BleCharValue<String> by bleCharHandler()
+    var serviceName: BleCharValue<String> by bleCharHandler()
 }
 
 /**

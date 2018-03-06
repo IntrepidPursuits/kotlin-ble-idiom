@@ -247,7 +247,7 @@ It's a work in progress, there may be some :)
 Please, tell us!
 
 ## Third Party Libraries
-- [RxAndroidBLE 1.4.1](https://github.com/Polidea/RxAndroidBle)
+- [RxAndroidBLE 1.5.0](https://github.com/Polidea/RxAndroidBle)
 - [RxJava 1.3.4](https://github.com/ReactiveX/RxJava)
 - [RxJava 2.1.7](https://github.com/ReactiveX/RxJava)
 - [RxAndroid 1.2.1](https://github.com/ReactiveX/RxAndroid)

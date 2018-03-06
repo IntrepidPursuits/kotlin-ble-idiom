@@ -3,7 +3,12 @@
  */
 package io.intrepid.bleidiom
 
-import kotlin.reflect.*
+import kotlin.reflect.KClass
+import kotlin.reflect.KMutableProperty0
+import kotlin.reflect.KMutableProperty1
+import kotlin.reflect.KProperty
+import kotlin.reflect.KProperty0
+import kotlin.reflect.KProperty1
 
 /**
  * Marks the start of a new BLE service definition.

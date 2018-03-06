@@ -1,8 +1,8 @@
 package io.intrepid.bleidiom.module
 
-import com.polidea.rxandroidble.exceptions.BleDisconnectedException
-import com.polidea.rxandroidble.exceptions.BleScanException
-import com.polidea.rxandroidble.exceptions.BleScanException.BLUETOOTH_CANNOT_START
+import com.polidea.rxandroidble2.exceptions.BleDisconnectedException
+import com.polidea.rxandroidble2.exceptions.BleScanException
+import com.polidea.rxandroidble2.exceptions.BleScanException.BLUETOOTH_CANNOT_START
 import io.intrepid.bleidiom.test.BleBaseTestHelper
 import io.reactivex.exceptions.UndeliverableException
 import org.junit.After

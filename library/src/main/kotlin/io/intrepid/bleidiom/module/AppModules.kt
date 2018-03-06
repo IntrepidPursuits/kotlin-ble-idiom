@@ -4,7 +4,7 @@ import com.github.salomonbrys.kodein.Kodein
 import com.github.salomonbrys.kodein.conf.ConfigurableKodein
 import com.github.salomonbrys.kodein.instance
 import com.github.salomonbrys.kodein.with
-import com.polidea.rxandroidble.exceptions.BleException
+import com.polidea.rxandroidble2.exceptions.BleException
 import io.intrepid.bleidiom.BuildConfig
 import io.intrepid.bleidiom.log.LogLevel
 import io.intrepid.bleidiom.log.Logger
