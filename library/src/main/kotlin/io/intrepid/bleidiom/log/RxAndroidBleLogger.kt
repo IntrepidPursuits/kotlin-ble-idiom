@@ -2,7 +2,7 @@ package io.intrepid.bleidiom.log
 
 import com.github.salomonbrys.kodein.instance
 import com.github.salomonbrys.kodein.with
-import com.polidea.rxandroidble.internal.RxBleLog
+import com.polidea.rxandroidble2.internal.RxBleLog
 import io.intrepid.bleidiom.module.LibKodein
 
 /**

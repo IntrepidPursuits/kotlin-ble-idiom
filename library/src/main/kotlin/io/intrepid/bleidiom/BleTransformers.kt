@@ -6,7 +6,7 @@
 package io.intrepid.bleidiom
 
 import arrow.data.Try
-import com.polidea.rxandroidble.RxBleConnection
+import com.polidea.rxandroidble2.RxBleConnection
 import io.intrepid.bleidiom.services.StructData
 import io.reactivex.Observable
 import io.reactivex.Single
@@ -14,7 +14,8 @@ import java.math.BigInteger
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.charset.Charset
-import java.util.*
+import java.util.Locale
+import java.util.UUID
 import kotlin.reflect.KClass
 import kotlin.reflect.full.isSubclassOf
 
@@ -50,7 +51,7 @@ val String.macAddress get() = ByteArray(6) { substring(it * 3, it * 3 + 2).toByt
  * Gets the [String] version of a [ByteArray] MAC-address.
  */
 val ByteArray.macAddress get() = fold("") { string, byte ->
-    string + (if (string.isEmpty()) "" else ":") + String.format(Locale.US, "%02x", byte)
+    string + (if (string.isEmpty()) "" else ":") + String.format(Locale.US, "%02X", byte)
 }
 
 fun toNumberByteArray(value: Number, order: ByteOrder = BLE_DEFAULBLE_BYTE_ORDER): ByteArray {

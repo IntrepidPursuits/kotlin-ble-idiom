@@ -1,17 +1,9 @@
 package io.intrepid.bleidiom.util
 
-import hu.akarnokd.rxjava.interop.RxJavaInterop
-import io.reactivex.BackpressureStrategy
 import io.reactivex.Observable
 import io.reactivex.Single
 import io.reactivex.functions.BiFunction
 import java.math.BigInteger
-
-/**
- */
-fun <T> rx.Observable<T>.toRx2() = RxJavaInterop.toV2Observable(this)!!
-fun <T> Observable<T>.toRx1(strategy: BackpressureStrategy = BackpressureStrategy.LATEST) =
-        RxJavaInterop.toV1Observable(this, strategy)!!
 
 operator fun Observable<out Any>.plus(number: Any) = map { it.handlePlus(number) }!!
 operator fun Number.plus(obs: Observable<out Any>) = obs.map { handlePlus(it) }!!

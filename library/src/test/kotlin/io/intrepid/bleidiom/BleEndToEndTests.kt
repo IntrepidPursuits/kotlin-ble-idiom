@@ -1,17 +1,26 @@
 package io.intrepid.bleidiom
 
-import com.github.salomonbrys.kodein.*
-import com.polidea.rxandroidble.mockrxandroidble.RxBleClientMock
-import com.polidea.rxandroidble.mockrxandroidble.RxBleDeviceMock
-import io.intrepid.bleidiom.module.TAG_EXECUTOR_SCHEDULER
-import io.intrepid.bleidiom.services.*
-import io.intrepid.bleidiom.test.*
-import io.intrepid.bleidiom.test.BleTestModules.Companion.testKodeinOverrides
+import com.github.salomonbrys.kodein.instance
+import com.github.salomonbrys.kodein.with
+import com.polidea.rxandroidble2.mockrxandroidble.RxBleClientMock
+import com.polidea.rxandroidble2.mockrxandroidble.RxBleDeviceMock
+import io.intrepid.bleidiom.services.ArrayWithShortLength
+import io.intrepid.bleidiom.services.FLOAT
+import io.intrepid.bleidiom.services.INT8
+import io.intrepid.bleidiom.services.StructData
+import io.intrepid.bleidiom.services.UINT16
+import io.intrepid.bleidiom.services.UINT8
+import io.intrepid.bleidiom.services.withLength
+import io.intrepid.bleidiom.test.BleMockClientBaseTestHelper
+import io.intrepid.bleidiom.test.BleTestModules
+import io.intrepid.bleidiom.test.LibTestKodein
+import io.intrepid.bleidiom.test.ServerDevice
+import io.intrepid.bleidiom.test.get
+import io.intrepid.bleidiom.test.uuid
 import io.intrepid.bleidiom.util.RxLoop
 import io.intrepid.bleidiom.util.get
 import io.intrepid.bleidiom.util.times
 import io.reactivex.Observable
-import io.reactivex.Scheduler
 import io.reactivex.Single
 import io.reactivex.functions.BiFunction
 import io.reactivex.functions.Function3
@@ -27,7 +36,8 @@ import org.junit.runner.RunWith
 import org.powermock.core.classloader.annotations.PrepareForTest
 import org.powermock.modules.junit4.PowerMockRunner
 import java.nio.ByteOrder
-import java.util.*
+import java.util.Arrays
+import java.util.Random
 import java.util.concurrent.TimeUnit
 import kotlin.math.ceil
 import kotlin.math.min
@@ -106,30 +116,14 @@ private fun createChunks(stringBytes: ByteArray, maxChunkSize: Int): MutableList
 @Suppress("FunctionName", "LocalVariableName")
 @RunWith(PowerMockRunner::class)
 @PrepareForTest(
-        value = [(RxBleClientMock.CharacteristicsBuilder::class), (RxBleClientMock.DeviceBuilder::class)],
-        fullyQualifiedNames = ["com.polidea.rxandroidble.mockrxandroidble.RxBleConnectionMock\$21"]
+    value = [(RxBleClientMock.CharacteristicsBuilder::class), (RxBleClientMock.DeviceBuilder::class)],
+    fullyQualifiedNames = ["com.polidea.rxandroidble2.mockrxandroidble.RxBleConnectionMock\$16"] // This thing is mocking android.bluetooth.BluetoothGattDescriptor
 )
 class BleEndToEndTests {
     companion object {
         const val MAC_ADDRESS1 = "00:11:22:33:44:55"
         const val INITIAL_NUMBER_VAl = 1
         val INITIAL_BYTES_VAL = ByteArray(5, { index -> index.toByte() })
-
-//        @BeforeClass
-//        @JvmStatic
-//        fun load() {
-//        }
-//
-//        @AfterClass
-//        @JvmStatic
-//        fun unload() {
-//        }
-    }
-
-    private val testModule = Kodein.Module(allowSilentOverride = true) {
-        bind<Scheduler>(tag = TAG_EXECUTOR_SCHEDULER) with multiton { _: Any ->
-            with(this@BleEndToEndTests).instance<TestScheduler>()
-        }
     }
 
     private val testHelper = BleMockClientBaseTestHelper()
@@ -139,10 +133,6 @@ class BleEndToEndTests {
     @Before
     fun setup() {
         TestService.addConfiguration()
-
-        testKodeinOverrides = {
-            import(testModule, allowOverride = true)
-        }
 
         testHelper.setup(this) {
             testDevices = listOf(BleMockClientBaseTestHelper.buildDeviceService(TestService::class, MAC_ADDRESS1) {
@@ -236,11 +226,11 @@ class BleEndToEndTests {
 
         val device = ServiceDeviceFactory.obtainClientDevice<TestService>(serverDevice.uuid, serverDevice)
         Single.zip<Int, Int, Int, Int>(
-                device[TestService::number],
-                device[TestService::number],
-                device[TestService::number],
-                Function3 { v1, v2, v3 -> v1 + v2 + v3 })
-                .subscribe(testObserver)
+            device[TestService::number],
+            device[TestService::number],
+            device[TestService::number],
+            Function3 { v1, v2, v3 -> v1 + v2 + v3 })
+            .subscribe(testObserver)
 
         testScheduler.triggerActions()
 
@@ -266,11 +256,11 @@ class BleEndToEndTests {
 
         val device = ServiceDeviceFactory.obtainClientDevice<TestService>(serverDevice.uuid, serverDevice)
         Single.zip<Int, Int, Int, Int>(
-                device[TestService::number],
-                device[TestService::number],
-                device[TestService::number],
-                Function3 { v1, v2, v3 -> v1 + v2 + v3 })
-                .subscribe(testObserver)
+            device[TestService::number],
+            device[TestService::number],
+            device[TestService::number],
+            Function3 { v1, v2, v3 -> v1 + v2 + v3 })
+            .subscribe(testObserver)
 
         testScheduler.triggerActions()
 
@@ -291,15 +281,15 @@ class BleEndToEndTests {
         // Dummy Server setup.
         val testServerObserver = TestObserver<String>()
         serverDevice[TestService::number]?.observeServerReads()
-                ?.subscribeBy { char ->
-                    char.value = expectedNumber
-                }
+            ?.subscribeBy { char ->
+                char.value = expectedNumber
+            }
 
         // Observe write-characteristic calls coming in from the client.
         serverDevice[TestService::string1]?.observeServerWrites()
-                ?.map { char -> char.value }
-                ?.toObservable()
-                ?.subscribe(testServerObserver)
+            ?.map { char -> char.value }
+            ?.toObservable()
+            ?.subscribe(testServerObserver)
 
         // Start client test.
         val device = ServiceDeviceFactory.obtainClientDevice<TestService>(serverDevice.uuid, serverDevice)
@@ -378,18 +368,18 @@ class BleEndToEndTests {
                         // Write the next request and wait for the response each time and update the response-state
                         next = {
                             responseObs.delay(100, TimeUnit.MILLISECONDS)
-                                    .zipWith<ChunkedData, Pair<ChunkedData, Int>>(
-                                            requestObs(chunk).delay(20, TimeUnit.MILLISECONDS).toObservable(),
-                                            BiFunction { response, request -> Pair(request, response) }
-                                    )
-                                    .doOnNext { result -> state = result.second }
-                                    .singleOrError()
+                                .zipWith<ChunkedData, Pair<ChunkedData, Int>>(
+                                    requestObs(chunk).delay(20, TimeUnit.MILLISECONDS).toObservable(),
+                                    BiFunction { response, request -> Pair(request, response) }
+                                )
+                                .doOnNext { result -> state = result.second }
+                                .singleOrError()
                         }
 
                         // No body... per default it just returns the iterator's items.
                     }.start<Pair<ChunkedData, Int>>()
-                            .toList()
-                            .toObservable()
+                        .toList()
+                        .toObservable()
                 }
             }
         }.start<List<Pair<ChunkedData, Int>>>()
@@ -455,7 +445,6 @@ class BleEndToEndTests {
         device[TestService::bytes] = longString.toByteArray()
 
         testScheduler.triggerActions()
-
         // Check if the server got the correct requests from the client.
         val resultString = serverTestObserver.values().fold("") { acc, bytes -> acc + String(bytes) }
         assertEquals(longString, resultString)
@@ -521,8 +510,8 @@ class BleEndToEndTests {
 
         val connectionObserver = TestObserver<ConnectionState>()
         device.observeConnectionState()
-                .map { state -> state }
-                .subscribe(connectionObserver)
+            .map { state -> state }
+            .subscribe(connectionObserver)
 
         // Client observes future server-notifications.
         device.observeNotifications(TestService::string2).subscribe(testObs)
@@ -645,12 +634,12 @@ class BleEndToEndTests {
     }
 
     private fun writePeriodically(device: TestService, value: String) =
-            Observable.interval(0, 200, TimeUnit.MILLISECONDS, testScheduler)
-                    .flatMapSingle { device.string2(value) }
+        Observable.interval(0, 200, TimeUnit.MILLISECONDS, testScheduler)
+            .flatMapSingle { device.string2(value) }
 
     private fun readPeriodically(device: TestService) =
-            Observable.interval(0, 200, TimeUnit.MILLISECONDS, testScheduler)
-                    .flatMapSingle { device.string3() }
+        Observable.interval(0, 200, TimeUnit.MILLISECONDS, testScheduler)
+            .flatMapSingle { device.string3() }
 
     @Test
     fun test_data_object_assembly() {

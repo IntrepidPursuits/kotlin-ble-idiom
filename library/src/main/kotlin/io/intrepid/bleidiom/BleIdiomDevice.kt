@@ -3,18 +3,18 @@ package io.intrepid.bleidiom
 import arrow.data.Try
 import com.github.salomonbrys.kodein.instance
 import com.github.salomonbrys.kodein.with
-import com.polidea.rxandroidble.RxBleConnection
-import com.polidea.rxandroidble.RxBleDevice
-import com.polidea.rxandroidble.exceptions.BleDisconnectedException
+import com.jakewharton.rx.ReplayingShare
+import com.polidea.rxandroidble2.RxBleConnection
+import com.polidea.rxandroidble2.RxBleDevice
+import com.polidea.rxandroidble2.exceptions.BleDisconnectedException
 import io.intrepid.bleidiom.log.LogLevel
 import io.intrepid.bleidiom.log.Logger
 import io.intrepid.bleidiom.module.LibKodein
-import io.intrepid.bleidiom.module.TAG_EXECUTOR_SCHEDULER
-import io.intrepid.bleidiom.util.toRx2
-import io.reactivex.*
 import io.reactivex.Observable
+import io.reactivex.Single
 import io.reactivex.subjects.PublishSubject
-import java.util.*
+import java.util.Arrays
+import java.util.Locale
 import kotlin.collections.set
 
 typealias BleConnection = Try<RxBleConnection>
@@ -26,11 +26,9 @@ typealias BleConnection = Try<RxBleConnection>
 class BleIdiomDevice internal constructor(internal val device: RxBleDevice) {
     companion object {
         private val logger: Logger = LibKodein.with(BleIdiomDevice::class).instance()
-        private val sharedConnectionScheduler: Scheduler
-            get() = LibKodein.with(this).instance(TAG_EXECUTOR_SCHEDULER)
     }
 
-    val macAddress = device.macAddress?.toLowerCase(Locale.US) ?: ""
+    val macAddress = device.macAddress?.toUpperCase(Locale.US) ?: ""
     val name = device.name ?: ""
 
     private val printName = "$macAddress($name)"
@@ -44,7 +42,7 @@ class BleIdiomDevice internal constructor(internal val device: RxBleDevice) {
     @Volatile
     internal var autoConnect = false
 
-     internal var scanRecord: ByteArray? = null
+    internal var scanRecord: ByteArray? = null
         get() = synchronized(this) { field }
         set(value) = synchronized(this) {
             if (!Arrays.equals(field, value)) {
@@ -53,7 +51,7 @@ class BleIdiomDevice internal constructor(internal val device: RxBleDevice) {
             field = value
         }
 
-    internal fun <S: Any> getParsedScanRecord(parser: (ScanRecordInfo) -> S?) = synchronized(this) {
+    internal fun <S : Any> getParsedScanRecord(parser: (ScanRecordInfo) -> S?) = synchronized(this) {
         val parse = isParsedScanRecordDirty
         isParsedScanRecordDirty = false
 
@@ -70,11 +68,7 @@ class BleIdiomDevice internal constructor(internal val device: RxBleDevice) {
 
     private var _parsedScanRecord: Any? = null
 
-    internal val sharedConnection by lazy {
-        Observable.defer {
-            createConnection().doOnNext { retryCount = 0 }
-        }.subscribeOn(sharedConnectionScheduler)
-    }
+    internal val sharedConnection by lazy { createConnection().doOnNext { retryCount = 0 } }
 
     @Volatile
     internal var retryStrategy: (String, Boolean, Int) -> Single<Boolean> = { _, _, _ -> Single.just(false) }
@@ -86,7 +80,7 @@ class BleIdiomDevice internal constructor(internal val device: RxBleDevice) {
 
     internal val killedConnectionObs: Observable<Unit> = killedConnectionPub
 
-    private val connectionAdapter = ConnectionSharingAdapter<RxBleConnection>()
+    private var killableConnection: Observable<RxBleConnection>? = null
 
     /**
      * Use this property to attach any piece of data to this particular BleIdiomDevice.
@@ -102,7 +96,6 @@ class BleIdiomDevice internal constructor(internal val device: RxBleDevice) {
      */
     internal fun observeConnectionState() =
             device.observeConnectionStateChanges()
-                    .toRx2()
                     .map { state -> ConnectionState[state] }!!
 
     internal fun <T : Any> modifyUserState(name: String, block: T?.() -> T?) = synchronized(this) {
@@ -123,24 +116,29 @@ class BleIdiomDevice internal constructor(internal val device: RxBleDevice) {
                         }
                     }
 
-    private fun establishConnection() =
-            establishKillableConnection()
-                    .compose(connectionAdapter)
-                    .map { Try.pure(it) }
-                    .onErrorResumeNext { error: Throwable ->
-                        Observable.never<BleConnection>().startWith(Try.raise(error))
-                    }
+    private fun establishConnection(): Observable<Try<RxBleConnection>> {
+        return establishKillableConnection()!!
+                .doOnTerminate { synchronized(this@BleIdiomDevice) { killableConnection = null } }
+                .map { Try.pure(it) }
+                .onErrorResumeNext { error: Throwable ->
+                    Observable.never<BleConnection>().startWith(Try.raise(error))
+                }
+    }
 
-    private fun establishKillableConnection() =
-            device.establishConnection(autoConnect).toRx2()
+    private fun establishKillableConnection() = synchronized(this) {
+        if (killableConnection == null) {
+            killableConnection = device.establishConnection(autoConnect)
                     .takeUntil(killedConnectionObs)
+                    .compose(ReplayingShare.instance())
+        }
+        killableConnection
+    }
 
     private fun handleError(brokenConnection: Try.Failure<RxBleConnection>) =
             when (brokenConnection.exception) {
                 is BleDisconnectedException -> {
                     logger.log(LogLevel.WARN, "Disconnection detected for $this")
                     val retryObs = retryStrategy(macAddress, autoConnect, ++retryCount)
-                            .observeOn(sharedConnectionScheduler)
 
                     retryObs.flatMapObservable { retry ->
                         if (retry) {
@@ -173,27 +171,4 @@ sealed class ConnectionState {
     object Disconnected : ConnectionState()
 
     override fun toString() = this::class.simpleName!!
-}
-
-private class ConnectionSharingAdapter<T> : ObservableTransformer<T, T> {
-    private val sync = Any()
-
-    internal var connectionObservable: Observable<T>? = null
-        get() = synchronized(sync) { field }
-        set(value) = synchronized(sync) { field = value }
-
-    override fun apply(source: Observable<T>): ObservableSource<T> {
-        synchronized(sync) {
-            connectionObservable?.let {
-                return it
-            }
-
-            val connectionObs = source
-                    .doOnDispose { connectionObservable = null }
-                    .replay(1)
-                    .refCount()
-            connectionObservable = connectionObs
-            return connectionObs
-        }
-    }
 }

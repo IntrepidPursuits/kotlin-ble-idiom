@@ -6,17 +6,20 @@ import android.bluetooth.BluetoothGattService
 import com.nhaarman.mockito_kotlin.any
 import com.nhaarman.mockito_kotlin.doAnswer
 import com.nhaarman.mockito_kotlin.mock
-import com.polidea.rxandroidble.RxBleDevice
-import com.polidea.rxandroidble.mockrxandroidble.RxBleClientMock
-import com.polidea.rxandroidble.mockrxandroidble.RxBleDeviceMock
-import io.intrepid.bleidiom.*
-import io.intrepid.bleidiom.util.toRx1
+import com.polidea.rxandroidble2.RxBleDevice
+import com.polidea.rxandroidble2.mockrxandroidble.RxBleClientMock
+import com.polidea.rxandroidble2.mockrxandroidble.RxBleDeviceMock
+import io.intrepid.bleidiom.BleCharValue
+import io.intrepid.bleidiom.BleCharValueDelegate
+import io.intrepid.bleidiom.BleIdiomDevice
+import io.intrepid.bleidiom.BleService
+import io.intrepid.bleidiom.toUUID
 import io.reactivex.Flowable
 import io.reactivex.Observable
 import io.reactivex.processors.PublishProcessor
 import io.reactivex.subjects.PublishSubject
 import org.powermock.api.mockito.PowerMockito
-import java.util.*
+import java.util.UUID
 import kotlin.reflect.KClass
 import kotlin.reflect.KProperty1
 import kotlin.reflect.full.instanceParameter
@@ -31,7 +34,7 @@ import kotlin.reflect.jvm.isAccessible
     @RunWith(PowerMockRunner::class)
     @PrepareForTest(
         value = [(RxBleClientMock.CharacteristicsBuilder::class), (RxBleClientMock.DeviceBuilder::class)],
-        fullyQualifiedNames = ["com.polidea.rxandroidble.mockrxandroidble.RxBleConnectionMock\$21"]
+        fullyQualifiedNames = ["com.polidea.rxandroidble2.mockrxandroidble.RxBleConnectionMock\$16"]
     )
 */
 
@@ -79,7 +82,7 @@ open class BleMockClientBaseTestHelper : BleBaseTestHelper() {
                                 characteristic.setInitialCharValue(property.getInitialValue(), castDelegate)
 
                                 deviceBuilder = deviceBuilder
-                                        .notificationSource(uuid, characteristic.serverNotificationObservable.toRx1())
+                                        .notificationSource(uuid, characteristic.serverNotificationObservable)
                             }
                         }
                     }
@@ -395,7 +398,7 @@ class TestableBluetoothGattDescriptor(val uuid: UUID) {
 /**
  * Creates a new [BleIdiomDevice] with a mocked [RxBleDevice]
  */
-val bleDeviceWithRxMock get() = BleIdiomDevice(mock<RxBleDevice>())
+val bleDeviceWithRxMock get() = BleIdiomDevice(mock())
 
 /**
  * Returns a (mocked) [RxBleDevice] as a handle ([Any]) from a [BleIdiomDevice]

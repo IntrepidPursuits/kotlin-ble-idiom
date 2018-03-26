@@ -1,17 +1,20 @@
 package io.intrepid.bleidiom.module
 
-import android.os.Process
-import com.github.salomonbrys.kodein.*
+import com.github.salomonbrys.kodein.Kodein
+import com.github.salomonbrys.kodein.bind
 import com.github.salomonbrys.kodein.bindings.Scope
 import com.github.salomonbrys.kodein.bindings.ScopeRegistry
-import com.polidea.rxandroidble.RxBleClient
-import com.polidea.rxandroidble.RxBleDevice
+import com.github.salomonbrys.kodein.factory
+import com.github.salomonbrys.kodein.instance
+import com.github.salomonbrys.kodein.scopedSingleton
+import com.github.salomonbrys.kodein.singleton
+import com.github.salomonbrys.kodein.with
+import com.polidea.rxandroidble2.RxBleClient
+import com.polidea.rxandroidble2.RxBleDevice
 import io.intrepid.bleidiom.BleIdiomDevice
 import io.intrepid.bleidiom.BleScanner
 import io.reactivex.Scheduler
-import io.reactivex.schedulers.Schedulers
-import java.util.*
-import java.util.concurrent.Executors
+import java.util.WeakHashMap
 
 /**
  * Any app that wishes to use this ble-idiom library should import this module.
@@ -60,7 +63,6 @@ private val RxAndroidBleModule = Kodein.Module {
     bind<RxBleClient>() with singleton { RxBleClient.create(instance()) }
     bind<RxBleDevice>() with factory { macAddress: String -> instance<RxBleClient>().getBleDevice(macAddress) }
     bind<BleIdiomDevice>() with scopedSingleton(DeviceScope) { device: RxBleDevice -> BleIdiomDevice(device) }
-    bind<Scheduler>(tag = TAG_EXECUTOR_SCHEDULER) with multiton { _: Any -> getScheduler() }
 }
 
 private object DeviceScope : Scope<RxBleDevice> {
@@ -69,17 +71,4 @@ private object DeviceScope : Scope<RxBleDevice> {
     override fun getRegistry(context: RxBleDevice) = synchronized(weakRegistry) {
         weakRegistry.getOrPut(context) { ScopeRegistry() }
     }!!
-}
-
-private fun getScheduler(): Scheduler {
-    val executor = Executors.newSingleThreadExecutor { runnable ->
-        Thread {
-            try {
-                Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
-            } catch (e: Exception) {
-            }
-            runnable.run()
-        }
-    }
-    return Schedulers.from(executor)
 }

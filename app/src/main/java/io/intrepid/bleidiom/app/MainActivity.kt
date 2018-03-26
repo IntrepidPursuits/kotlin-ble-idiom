@@ -36,7 +36,7 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * Example of how to read a Byte BLE characteristic.
-     * @param batterijService from which to get the name.
+     * @param batterijService from which to get the serviceName.
      */
     private fun getBatterijPercentage(batterijService: BatterijService) =
         batterijService[BatterijService::percentage]
@@ -46,24 +46,24 @@ class MainActivity : AppCompatActivity() {
      * @param batterijService from which to get the percentage.
      */
     private fun getBatterijName(batterijService: BatterijService) =
-        batterijService[BatterijService::name]
+        batterijService[BatterijService::serviceName]
 
     /**
      * Example of how to write a value to a BLE characteristic
-     * @param batterijService whose name will be set.
-     * @param name The name to be set.
+     * @param batterijService whose serviceName will be set.
+     * @param name The serviceName to be set.
      */
     private fun setBatterijName(batterijService: BatterijService, name: String) {
-        batterijService[BatterijService::name] = name
+        batterijService[BatterijService::serviceName] = name
     }
 
     /**
      * Example of how to emit (stream) values to a BLE characteristic.
-     * @param batterijService whose name will be set each time the Observable emits a new value.
-     * @param nameStream The Observable that will 'stream' values for the service's name.
+     * @param batterijService whose serviceName will be set each time the Observable emits a new value.
+     * @param nameStream The Observable that will 'stream' values for the service's serviceName.
      */
     private fun streamBatterijName(batterijService: BatterijService, nameStream: Observable<String>) {
-        batterijService[BatterijService::name] = nameStream
+        batterijService[BatterijService::serviceName] = nameStream
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -119,7 +119,7 @@ class MainActivity : AppCompatActivity() {
         textView.text = "..."
 
         return connectedServiceObs
-                .flatMap { battery -> getBatterijPercentage(battery) }
+                .flatMap { battery -> getBatterijPercentage(battery).toObservable() }
                 .take(1)
                 .repeatWhen { completed -> completed.delay(2, TimeUnit.SECONDS) }
                 .observeOn(AndroidSchedulers.mainThread())

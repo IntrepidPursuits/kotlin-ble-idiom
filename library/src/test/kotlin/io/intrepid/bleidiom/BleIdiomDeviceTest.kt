@@ -1,20 +1,33 @@
 package io.intrepid.bleidiom
 
-import com.github.salomonbrys.kodein.*
+import com.github.salomonbrys.kodein.Kodein
+import com.github.salomonbrys.kodein.bind
+import com.github.salomonbrys.kodein.factory
+import com.github.salomonbrys.kodein.instance
+import com.github.salomonbrys.kodein.scopedSingleton
+import com.github.salomonbrys.kodein.with
 import com.nhaarman.mockito_kotlin.any
 import com.nhaarman.mockito_kotlin.doAnswer
 import com.nhaarman.mockito_kotlin.spy
 import com.nhaarman.mockito_kotlin.whenever
-import com.polidea.rxandroidble.RxBleConnection
-import com.polidea.rxandroidble.RxBleDevice
-import com.polidea.rxandroidble.exceptions.BleDisconnectedException
-import com.polidea.rxandroidble.mockrxandroidble.RxBleClientMock
-import com.polidea.rxandroidble.mockrxandroidble.RxBleDeviceMock
-import io.intrepid.bleidiom.test.*
+import com.polidea.rxandroidble2.RxBleConnection
+import com.polidea.rxandroidble2.RxBleDevice
+import com.polidea.rxandroidble2.exceptions.BleDisconnectedException
+import com.polidea.rxandroidble2.mockrxandroidble.RxBleClientMock
+import com.polidea.rxandroidble2.mockrxandroidble.RxBleDeviceMock
+import io.intrepid.bleidiom.test.BleMockClientBaseTestHelper
+import io.intrepid.bleidiom.test.BleTestModules
 import io.intrepid.bleidiom.test.BleTestModules.Companion.testKodeinOverrides
+import io.intrepid.bleidiom.test.LibTestKodein
+import io.intrepid.bleidiom.test.ServerDevice
+import io.intrepid.bleidiom.test.TestScope
+import io.intrepid.bleidiom.test.get
+import io.intrepid.bleidiom.test.uuid
 import io.intrepid.bleidiom.util.asString
 import io.intrepid.bleidiom.util.plus
+import io.reactivex.Emitter
 import io.reactivex.Flowable
+import io.reactivex.Observable
 import io.reactivex.Single
 import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.functions.BiFunction
@@ -42,7 +55,7 @@ private val bleDisconnectedException
 @RunWith(PowerMockRunner::class)
 @PrepareForTest(
         value = [(RxBleClientMock.CharacteristicsBuilder::class), (RxBleClientMock.DeviceBuilder::class)],
-        fullyQualifiedNames = ["com.polidea.rxandroidble.mockrxandroidble.RxBleConnectionMock\$21"]
+        fullyQualifiedNames = ["com.polidea.rxandroidble2.mockrxandroidble.RxBleConnectionMock\$16"] // This thing is mocking android.bluetooth.BluetoothGattDescriptor
 )
 class BleIdiomDeviceTest {
     private val testHelper = BleMockClientBaseTestHelper()
@@ -54,6 +67,9 @@ class BleIdiomDeviceTest {
         bind<RxBleDeviceMock>() with factory { macAddress: String ->
             spy(with(macAddress).instance<RxBleDevice>()) as RxBleDeviceMock
         }
+
+        // For this test-suite, return an 'actual' RxBleDeviceMock, not a mocked instance of it.
+        bind<BleIdiomDevice>() with scopedSingleton(TestScope) { device: RxBleDevice -> BleIdiomDevice(device) }
     }
 
     @Before
@@ -176,8 +192,8 @@ class BleIdiomDeviceTest {
 
         doAnswer { inv ->
             count++
-            val ret = inv.callRealMethod() as rx.Observable<*>
-            ret.flatMap { rx.Observable.error<RxBleConnection>(bleDisconnectedException) }
+            val ret = inv.callRealMethod() as Observable<*>
+            ret.flatMap { Observable.error<RxBleConnection>(bleDisconnectedException) }
         }.whenever(serverDevice).establishConnection(any())
 
         var numberOfRetries = 0
@@ -214,10 +230,10 @@ class BleIdiomDeviceTest {
         var count = 0
         doAnswer { inv ->
             count++
-            val ret = inv.callRealMethod() as rx.Observable<*>
+            val ret = inv.callRealMethod() as Observable<*>
             ret.flatMap {
-                if (count == (expectedRetries + 1)) rx.Observable.just(it)
-                else rx.Observable.error<RxBleConnection>(bleDisconnectedException)
+                if (count == (expectedRetries + 1)) Observable.just(it)
+                else Observable.error<RxBleConnection>(bleDisconnectedException)
             }
         }.whenever(serverDevice).establishConnection(any())
 
@@ -250,17 +266,17 @@ class BleIdiomDeviceTest {
         val delay = 100L
         val maxRetries = 3
 
-        val emittersObs = TestObserver<rx.Emitter<Unit>>()
-        val emitters = BehaviorSubject.create<rx.Emitter<Unit>>()
+        val emittersObs = TestObserver<Emitter<Unit>>()
+        val emitters = BehaviorSubject.create<Emitter<Unit>>()
         val safeEmitters = emitters.toSerialized()
         emitters.subscribe(emittersObs)
 
         doAnswer { inv ->
-            val ret = inv.callRealMethod() as rx.Observable<*>
-            val controller = rx.Observable.create<Unit>({ emitter ->
+            val ret = inv.callRealMethod() as Observable<*>
+            val controller = Observable.create<Unit>({ emitter ->
                 safeEmitters.onNext(emitter)
-            }, rx.Emitter.BackpressureMode.LATEST)
-            rx.Observable.zip(ret, controller, { conn, _ -> conn })
+            })
+            Observable.zip(ret, controller, BiFunction { conn: Any, _: Unit -> conn })
         }.whenever(serverDevice).establishConnection(any())
 
         serviceDevice.connectionRetryStrategy = { _, _, retryCount ->
@@ -313,17 +329,17 @@ class BleIdiomDeviceTest {
         val delay = 100L
         val maxRetries = 3
 
-        val emittersObs = TestObserver<rx.Emitter<Unit>>()
-        val emitters = BehaviorSubject.create<rx.Emitter<Unit>>()
+        val emittersObs = TestObserver<Emitter<Unit>>()
+        val emitters = BehaviorSubject.create<Emitter<Unit>>()
         val safeEmitters = emitters.toSerialized()
         emitters.subscribe(emittersObs)
 
         doAnswer { inv ->
-            val ret = inv.callRealMethod() as rx.Observable<*>
-            val controller = rx.Observable.create<Unit>({ emitter ->
+            val ret = inv.callRealMethod() as Observable<*>
+            val controller = Observable.create<Unit>({ emitter ->
                 safeEmitters.onNext(emitter)
-            }, rx.Emitter.BackpressureMode.LATEST)
-            rx.Observable.zip(ret, controller, { conn, _ -> conn })
+            })
+            Observable.zip(ret, controller, BiFunction { conn: Any, _: Unit -> conn })
         }.whenever(serverDevice).establishConnection(any())
 
         serviceDevice.connectionRetryStrategy = { _, _, retryCount ->
