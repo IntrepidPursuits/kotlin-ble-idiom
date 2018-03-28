@@ -107,7 +107,75 @@ class BleIdiomDeviceTest {
     }
 
     @Test
-    fun test_for_race_conditions() {
+    fun test_for_many_reconnections() {
+        // Dummy Server setup, where "number" always returns 0
+        val testServerObserver = TestObserver<Pair<String, String>>()
+        serverDevice[TestService::number]?.observeServerReads()
+                ?.subscribeBy { char ->
+                    char.value = 0
+                }
+
+        // Observe write-characteristic calls coming in from the client.
+        Flowable.zip(
+                serverDevice[TestService::string1]?.observeServerWrites()
+                        ?.map { char -> char.value },
+                serverDevice[TestService::string2]?.observeServerWrites()
+                        ?.map { char -> char.value },
+                BiFunction<String, String, Pair<String, String>> { a, b -> a to b })
+                .toObservable().subscribe(testServerObserver)
+
+        // Observe connection state.
+        val connectionObserver = TestObserver<ConnectionState>()
+
+        // Start client test.
+        val device = ServiceDeviceFactory.obtainClientDevice<TestService>(serverDevice.uuid, serverDevice)
+        device.observeConnectionState().subscribe(connectionObserver)
+
+        // Generate 100 pairs, each pair's first value is odd, its seconds value is even.
+        // Generate them using two threads using different timing.
+        val thread1 = Thread {
+            // Generate pairs whose first and second values lie between 0 and 99
+            for (i in 0..99) {
+                device[TestService::string1] = (device[TestService::number] + 1 + 2 * i).asString()
+                Thread.sleep(10)
+                device[TestService::string2] = (device[TestService::number] + 2 * i).asString()
+            }
+        }
+        thread1.start()
+
+        thread1.join()
+
+        Thread.sleep(50)
+
+        // And check if the (dummy) server got the expected value.
+        testServerObserver.assertValueCount(100)
+
+        val sortedString1Values = testServerObserver.values().asSequence()
+                .toSet()
+                .map { pair -> pair.first.toInt() }
+                .sorted().toList()
+
+        val sortedString2Values = testServerObserver.values().asSequence()
+                .toSet()
+                .map { pair -> pair.second.toInt() }
+                .sorted().toList()
+
+        assertEquals(1, sortedString1Values[0])
+        assertEquals(199, sortedString1Values.last())
+        assertTrue { sortedString1Values.all { it -> it % 2 == 1 } }
+
+        assertEquals(0, sortedString2Values[0])
+        assertEquals(198, sortedString2Values.last())
+        assertTrue { sortedString2Values.all { it -> it % 2 == 0 } }
+
+        assertEquals(ConnectionState.Disconnected, connectionObserver.values().last())
+    }
+
+    @Test
+    fun test_for_many_reconnections_in_race_conditions() {
+        // As of now, this test occasionally fails.
+        // Instead of 100 values in the testServerObserver, there are 99 on occasion.
+
         // Dummy Server setup, where "number" always returns 0
         val testServerObserver = TestObserver<Pair<String, String>>()
         serverDevice[TestService::number]?.observeServerReads()
@@ -136,8 +204,9 @@ class BleIdiomDeviceTest {
         val thread1 = Thread {
             // Generate pairs whose first and second values lie between 0 and 99
             for (i in 0..49) {
+                Thread.sleep(5)
                 device[TestService::string1] = (device[TestService::number] + 1 + 2 * i).asString()
-                Thread.sleep(10)
+                Thread.sleep(5)
                 device[TestService::string2] = (device[TestService::number] + 2 * i).asString()
             }
         }
@@ -146,18 +215,17 @@ class BleIdiomDeviceTest {
         val thread2 = Thread {
             // Generate pairs whose first and second values lie between 100 and 199
             for (i in 0..49) {
-                device[TestService::string2] = (device[TestService::number] + 100 + 2 * i).asString()
                 Thread.sleep(9)
+                device[TestService::string2] = (device[TestService::number] + 100 + 2 * i).asString()
                 device[TestService::string1] = (device[TestService::number] + 101 + 2 * i).asString()
             }
         }
         thread2.start()
 
-
         thread1.join()
         thread2.join()
 
-        Thread.sleep(5)
+        Thread.sleep(50)
 
         // And check if the (dummy) server got the expected value.
         testServerObserver.assertValueCount(100)

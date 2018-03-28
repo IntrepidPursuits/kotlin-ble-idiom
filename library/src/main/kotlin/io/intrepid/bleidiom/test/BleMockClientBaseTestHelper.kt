@@ -6,20 +6,38 @@ import android.bluetooth.BluetoothGattService
 import com.nhaarman.mockito_kotlin.any
 import com.nhaarman.mockito_kotlin.doAnswer
 import com.nhaarman.mockito_kotlin.mock
+import com.nhaarman.mockito_kotlin.spy
+import com.polidea.rxandroidble.internal.connection.NoRetryStrategy
+import com.polidea.rxandroidble2.NotificationSetupMode
+import com.polidea.rxandroidble2.RxBleConnection
 import com.polidea.rxandroidble2.RxBleDevice
+import com.polidea.rxandroidble2.RxBleDeviceServices
+import com.polidea.rxandroidble2.exceptions.BleAlreadyConnectedException
+import com.polidea.rxandroidble2.exceptions.BleDisconnectedException
+import com.polidea.rxandroidble2.internal.connection.ImmediateSerializedBatchAckStrategy
 import com.polidea.rxandroidble2.mockrxandroidble.RxBleClientMock
+import com.polidea.rxandroidble2.mockrxandroidble.RxBleConnectionMock
 import com.polidea.rxandroidble2.mockrxandroidble.RxBleDeviceMock
 import io.intrepid.bleidiom.BleCharValue
 import io.intrepid.bleidiom.BleCharValueDelegate
 import io.intrepid.bleidiom.BleIdiomDevice
 import io.intrepid.bleidiom.BleService
+import io.intrepid.bleidiom.letMany
 import io.intrepid.bleidiom.toUUID
+import io.reactivex.Completable
 import io.reactivex.Flowable
 import io.reactivex.Observable
+import io.reactivex.Single
+import io.reactivex.functions.BiFunction
 import io.reactivex.processors.PublishProcessor
+import io.reactivex.subjects.BehaviorSubject
 import io.reactivex.subjects.PublishSubject
 import org.powermock.api.mockito.PowerMockito
 import java.util.UUID
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.math.min
 import kotlin.reflect.KClass
 import kotlin.reflect.KProperty1
 import kotlin.reflect.full.instanceParameter
@@ -130,6 +148,21 @@ open class BleMockClientBaseTestHelper : BleBaseTestHelper() {
                 .withAnyArguments()
                 .thenAnswer {
                     TestableBluetoothGattDescriptor.mock(it.arguments[0] as UUID)
+                }
+
+        PowerMockito
+                .whenNew(RxBleDeviceMock::class.java)
+                .withAnyArguments()
+                .thenAnswer {
+                    @Suppress("UNCHECKED_CAST")
+                    TestRxBleDeviceMock(
+                            it.arguments[0] as String,
+                            it.arguments[1] as String,
+                            it.arguments[2] as ByteArray,
+                            it.arguments[3] as Int?,
+                            it.arguments[4] as RxBleDeviceServices,
+                            it.arguments[5] as Map<UUID, Observable<ByteArray>>
+                    )
                 }
 
         super.setup(testClass, factory)
@@ -391,6 +424,309 @@ class TestableBluetoothGattDescriptor(val uuid: UUID) {
     }
 
     private var value: ByteArray? = null
+}
+
+/**
+ * Modifies the [RxBleDeviceMock]'s [establishConnection] method by marking returned [RxBleConnection] as
+ * connected or not and by returning a brand new [RxBleConnection] object for each new connection.
+ */
+open class TestRxBleDeviceMock(
+        name: String,
+        macAddress: String,
+        scanRecord: ByteArray,
+        rssi: Int?,
+        rxBleDeviceServices: RxBleDeviceServices,
+        characteristicNotificationSources: Map<UUID, Observable<ByteArray>>
+) : RxBleDeviceMock(name, macAddress, scanRecord, rssi, rxBleDeviceServices, characteristicNotificationSources) {
+    private val isConnected = AtomicBoolean(false)
+
+    private val rxBleConnectionFactory: () -> TestRxBleConnectionMock = {
+        spy(TestRxBleConnectionMock(macAddress, rxBleDeviceServices, rssi!!, characteristicNotificationSources))
+    }
+
+    private val connectionStateBehaviorSubject = BehaviorSubject.createDefault<RxBleConnection.RxBleConnectionState>(
+            RxBleConnection.RxBleConnectionState.DISCONNECTED
+    )
+
+    override fun establishConnection(autoConnect: Boolean): Observable<RxBleConnection> {
+        return Observable.defer {
+            if (isConnected.compareAndSet(false, true)) {
+                val connection = rxBleConnectionFactory()
+                Observable.never<RxBleConnection>().startWith(connection)
+                        .doOnSubscribe {
+                            connectionStateBehaviorSubject.onNext(RxBleConnection.RxBleConnectionState.CONNECTING)
+                        }
+                        .doOnNext {
+                            connectionStateBehaviorSubject.onNext(RxBleConnection.RxBleConnectionState.CONNECTED)
+                        }
+                        .doFinally {
+                            connection.isConnectedToDevice = false
+                            connectionStateBehaviorSubject.onNext(RxBleConnection.RxBleConnectionState.DISCONNECTED)
+                            isConnected.set(false)
+                        }
+            } else {
+                Observable.error(BleAlreadyConnectedException(macAddress))
+            }
+        }
+    }
+
+    override fun observeConnectionStateChanges(): Observable<RxBleConnection.RxBleConnectionState> {
+        return connectionStateBehaviorSubject.distinctUntilChanged()
+    }
+}
+
+/**
+ * An implementation of [RxBleConnectionMock] that will throw exceptions when methods on it are called
+ * while it is marked as disconnected.
+ */
+open class TestRxBleConnectionMock(
+        private val macAddress: String,
+        rxBleDeviceServices: RxBleDeviceServices,
+        rssi: Int,
+        characteristicNotificationSources: Map<UUID, Observable<ByteArray>>
+) : RxBleConnectionMock(rxBleDeviceServices, rssi, characteristicNotificationSources) {
+    @Volatile var isConnectedToDevice: Boolean = true
+
+    override fun writeCharacteristic(bluetoothGattCharacteristic: BluetoothGattCharacteristic, data: ByteArray): Single<ByteArray> {
+        if (!isConnectedToDevice) {
+            throw BleDisconnectedException(macAddress)
+        }
+        return super.writeCharacteristic(bluetoothGattCharacteristic, data)
+    }
+
+    override fun writeCharacteristic(characteristicUuid: UUID, data: ByteArray): Single<ByteArray> {
+        if (!isConnectedToDevice) {
+            throw BleDisconnectedException(macAddress)
+        }
+        return super.writeCharacteristic(characteristicUuid, data)
+    }
+
+    override fun requestMtu(mtu: Int): Single<Int> {
+        if (!isConnectedToDevice) {
+            throw BleDisconnectedException(macAddress)
+        }
+        return super.requestMtu(mtu)
+    }
+
+    override fun requestConnectionPriority(connectionPriority: Int, delay: Long, timeUnit: TimeUnit): Completable {
+        if (!isConnectedToDevice) {
+            throw BleDisconnectedException(macAddress)
+        }
+        return super.requestConnectionPriority(connectionPriority, delay, timeUnit)
+    }
+
+    override fun setupNotification(characteristicUuid: UUID): Observable<Observable<ByteArray>> {
+        if (!isConnectedToDevice) {
+            throw BleDisconnectedException(macAddress)
+        }
+        return super.setupNotification(characteristicUuid)
+    }
+
+    override fun setupNotification(characteristic: BluetoothGattCharacteristic): Observable<Observable<ByteArray>> {
+        if (!isConnectedToDevice) {
+            throw BleDisconnectedException(macAddress)
+        }
+        return super.setupNotification(characteristic)
+    }
+
+    override fun setupNotification(characteristicUuid: UUID, setupMode: NotificationSetupMode): Observable<Observable<ByteArray>> {
+        if (!isConnectedToDevice) {
+            throw BleDisconnectedException(macAddress)
+        }
+        return super.setupNotification(characteristicUuid, setupMode)
+    }
+
+    override fun setupNotification(characteristic: BluetoothGattCharacteristic, setupMode: NotificationSetupMode): Observable<Observable<ByteArray>> {
+        if (!isConnectedToDevice) {
+            throw BleDisconnectedException(macAddress)
+        }
+        return super.setupNotification(characteristic, setupMode)
+    }
+
+    override fun setupIndication(characteristicUuid: UUID): Observable<Observable<ByteArray>> {
+        if (!isConnectedToDevice) {
+            throw BleDisconnectedException(macAddress)
+        }
+        return super.setupIndication(characteristicUuid)
+    }
+
+    override fun setupIndication(characteristic: BluetoothGattCharacteristic): Observable<Observable<ByteArray>> {
+        if (!isConnectedToDevice) {
+            throw BleDisconnectedException(macAddress)
+        }
+        return super.setupIndication(characteristic)
+    }
+
+    override fun setupIndication(characteristicUuid: UUID, setupMode: NotificationSetupMode): Observable<Observable<ByteArray>> {
+        if (!isConnectedToDevice) {
+            throw BleDisconnectedException(macAddress)
+        }
+        return super.setupIndication(characteristicUuid, setupMode)
+    }
+
+    override fun setupIndication(characteristic: BluetoothGattCharacteristic, setupMode: NotificationSetupMode): Observable<Observable<ByteArray>> {
+        if (!isConnectedToDevice) {
+            throw BleDisconnectedException(macAddress)
+        }
+        return super.setupIndication(characteristic, setupMode)
+    }
+
+    override fun writeDescriptor(serviceUuid: UUID, characteristicUuid: UUID, descriptorUuid: UUID, data: ByteArray): Completable {
+        if (!isConnectedToDevice) {
+            throw BleDisconnectedException(macAddress)
+        }
+        return super.writeDescriptor(serviceUuid, characteristicUuid, descriptorUuid, data)
+    }
+
+    override fun writeDescriptor(descriptor: BluetoothGattDescriptor, data: ByteArray): Completable {
+        if (!isConnectedToDevice) {
+            throw BleDisconnectedException(macAddress)
+        }
+        return super.writeDescriptor(descriptor, data)
+    }
+
+    override fun readDescriptor(serviceUuid: UUID, characteristicUuid: UUID, descriptorUuid: UUID): Single<ByteArray> {
+        if (!isConnectedToDevice) {
+            throw BleDisconnectedException(macAddress)
+        }
+        return super.readDescriptor(serviceUuid, characteristicUuid, descriptorUuid)
+    }
+
+    override fun readDescriptor(descriptor: BluetoothGattDescriptor): Single<ByteArray> {
+        if (!isConnectedToDevice) {
+            throw BleDisconnectedException(macAddress)
+        }
+        return super.readDescriptor(descriptor)
+    }
+
+    @Suppress("DEPRECATION", "OverridingDeprecatedMember")
+    override fun getCharacteristic(characteristicUuid: UUID): Single<BluetoothGattCharacteristic> {
+        if (!isConnectedToDevice) {
+            throw BleDisconnectedException(macAddress)
+        }
+        return super.getCharacteristic(characteristicUuid)
+    }
+
+    override fun readRssi(): Single<Int> {
+        if (!isConnectedToDevice) {
+            throw BleDisconnectedException(macAddress)
+        }
+        return super.readRssi()
+    }
+
+    override fun discoverServices(): Single<RxBleDeviceServices> {
+        if (!isConnectedToDevice) {
+            throw BleDisconnectedException(macAddress)
+        }
+        return super.discoverServices()
+    }
+
+    override fun discoverServices(timeout: Long, timeUnit: TimeUnit): Single<RxBleDeviceServices> {
+        if (!isConnectedToDevice) {
+            throw BleDisconnectedException(macAddress)
+        }
+        return super.discoverServices(timeout, timeUnit)
+    }
+
+    override fun readCharacteristic(characteristicUuid: UUID): Single<ByteArray> {
+        if (!isConnectedToDevice) {
+            throw BleDisconnectedException(macAddress)
+        }
+        return super.readCharacteristic(characteristicUuid)
+    }
+
+    override fun readCharacteristic(characteristic: BluetoothGattCharacteristic): Single<ByteArray> {
+        if (!isConnectedToDevice) {
+            throw BleDisconnectedException(macAddress)
+        }
+        return super.readCharacteristic(characteristic)
+    }
+
+    override fun createNewLongWriteBuilder(): RxBleConnection.LongWriteOperationBuilder {
+        if (!isConnectedToDevice) {
+            throw BleDisconnectedException(macAddress)
+        }
+        return TestLongWriteBuilder(this)
+    }
+}
+
+private class TestLongWriteBuilder(private val connection: RxBleConnection) : RxBleConnection.LongWriteOperationBuilder {
+
+    private var bluetoothGattCharacteristicObservable: Observable<BluetoothGattCharacteristic>? = null
+
+    private var maxBatchSize = 20 // default
+
+    private var bytes: ByteArray? = null
+
+    private var writeOperationAckStrategy: RxBleConnection.WriteOperationAckStrategy = ImmediateSerializedBatchAckStrategy()// default
+
+    private var writeOperationRetryStrategy: RxBleConnection.WriteOperationRetryStrategy = NoRetryStrategy()// default
+
+    override fun setWriteOperationRetryStrategy(writeOperationRetryStrategy: RxBleConnection.WriteOperationRetryStrategy): RxBleConnection.LongWriteOperationBuilder {
+        this.writeOperationRetryStrategy = writeOperationRetryStrategy
+        return this
+    }
+
+    override fun setBytes(bytes: ByteArray): RxBleConnection.LongWriteOperationBuilder {
+        this.bytes = bytes
+        return this
+    }
+
+    override fun setCharacteristicUuid(uuid: UUID): RxBleConnection.LongWriteOperationBuilder {
+        bluetoothGattCharacteristicObservable = connection.discoverServices()
+                .flatMap({ rxBleDeviceServices -> rxBleDeviceServices.getCharacteristic(uuid) })
+                .toObservable()
+        return this
+    }
+
+    override fun setCharacteristic(
+            bluetoothGattCharacteristic: BluetoothGattCharacteristic): RxBleConnection.LongWriteOperationBuilder {
+        bluetoothGattCharacteristicObservable = Observable.just(bluetoothGattCharacteristic)
+        return this
+    }
+
+    override fun setMaxBatchSize(maxBatchSize: Int): RxBleConnection.LongWriteOperationBuilder {
+        this.maxBatchSize = maxBatchSize
+        return this
+    }
+
+    override fun setWriteOperationAckStrategy(writeOperationAckStrategy: RxBleConnection.WriteOperationAckStrategy): RxBleConnection.LongWriteOperationBuilder {
+        this.writeOperationAckStrategy = writeOperationAckStrategy
+        return this
+    }
+
+    override fun build(): Observable<ByteArray> {
+        if (bluetoothGattCharacteristicObservable == null) {
+            throw IllegalArgumentException("setCharacteristicUuid() or setCharacteristic() needs to be called before build()")
+        }
+
+        if (bytes == null) {
+            throw IllegalArgumentException("setBytes() needs to be called before build()")
+        }
+
+        return letMany(bluetoothGattCharacteristicObservable, bytes) { bleGattCharObs, bytes ->
+            val excess = bytes.size % maxBatchSize > 0
+            val numberOfBatches = bytes.size / maxBatchSize + if (excess) 1 else 0
+            val numberOfBatchesLeft = AtomicInteger(numberOfBatches)
+
+            val batchObs = Observable.fromCallable { numberOfBatchesLeft.get() }
+            Observable.zip(batchObs, bleGattCharObs,
+                    BiFunction { chunkIdx: Int, char: BluetoothGattCharacteristic -> (chunkIdx to char) })
+                    .concatMap { (idx, char) ->
+                        val start = maxBatchSize * (numberOfBatches - idx)
+                        val end = min(start + maxBatchSize, bytes.size)
+                        connection
+                                .writeCharacteristic(char, bytes.sliceArray(start until end))
+                                .toObservable()
+                                .concatMap { Observable.just(idx) }
+                    }
+                    .map { idx -> idx > 0 }
+                    .compose(writeOperationAckStrategy)
+                    .repeatWhen { it.takeWhile { numberOfBatchesLeft.decrementAndGet() > 0 } }
+                    .toList()
+                    .flatMapObservable { Observable.just(bytes) }
+        } ?: Observable.empty()
+    }
 }
 
 /* Some Test Helper functions/properties */
