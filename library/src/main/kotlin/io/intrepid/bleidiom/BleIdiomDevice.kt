@@ -3,13 +3,13 @@ package io.intrepid.bleidiom
 import arrow.data.Try
 import com.github.salomonbrys.kodein.instance
 import com.github.salomonbrys.kodein.with
-import com.jakewharton.rx.ReplayingShare
 import com.polidea.rxandroidble2.RxBleConnection
 import com.polidea.rxandroidble2.RxBleDevice
 import com.polidea.rxandroidble2.exceptions.BleDisconnectedException
 import io.intrepid.bleidiom.log.LogLevel
 import io.intrepid.bleidiom.log.Logger
 import io.intrepid.bleidiom.module.LibKodein
+import io.intrepid.bleidiom.util.ReplayingUnfinalizedShare
 import io.reactivex.Observable
 import io.reactivex.Single
 import io.reactivex.subjects.PublishSubject
@@ -80,8 +80,6 @@ class BleIdiomDevice internal constructor(internal val device: RxBleDevice) {
 
     internal val killedConnectionObs: Observable<Unit> = killedConnectionPub
 
-    private var killableConnection: Observable<RxBleConnection>? = null
-
     /**
      * Use this property to attach any piece of data to this particular BleIdiomDevice.
      */
@@ -107,35 +105,21 @@ class BleIdiomDevice internal constructor(internal val device: RxBleDevice) {
 
     override fun toString() = printName
 
-    private fun createConnection(): Observable<BleConnection> =
-            establishConnection()
-                    .flatMap {
-                        when (it) {
-                            is Try.Success -> Observable.just(it)
-                            is Try.Failure -> handleError(it)
-                        }
-                    }
+    private fun createConnection(): Observable<BleConnection> {
+        val establishedConnection = Observable.defer { device.establishConnection(autoConnect) }
+        val retriedConnection = establishedConnection.retryWhen { it.flatMap { handleError(it) } }
+        val killableConnection = retriedConnection.takeUntil(killedConnectionObs)
+        val sharableConnection = killableConnection.compose(ReplayingUnfinalizedShare.instance())
 
-    private fun establishConnection(): Observable<Try<RxBleConnection>> {
-        return establishKillableConnection()!!
-                .doOnTerminate { synchronized(this@BleIdiomDevice) { killableConnection = null } }
+        return sharableConnection
                 .map { Try.pure(it) }
                 .onErrorResumeNext { error: Throwable ->
                     Observable.never<BleConnection>().startWith(Try.raise(error))
                 }
     }
 
-    private fun establishKillableConnection() = synchronized(this) {
-        if (killableConnection == null) {
-            killableConnection = device.establishConnection(autoConnect)
-                    .takeUntil(killedConnectionObs)
-                    .compose(ReplayingShare.instance())
-        }
-        killableConnection
-    }
-
-    private fun handleError(brokenConnection: Try.Failure<RxBleConnection>) =
-            when (brokenConnection.exception) {
+    private fun handleError(error: Throwable) =
+            when (error) {
                 is BleDisconnectedException -> {
                     logger.log(LogLevel.WARN, "Disconnection detected for $this")
                     val retryObs = retryStrategy(macAddress, autoConnect, ++retryCount)
@@ -143,15 +127,15 @@ class BleIdiomDevice internal constructor(internal val device: RxBleDevice) {
                     retryObs.flatMapObservable { retry ->
                         if (retry) {
                             logger.log(LogLevel.DEBUG, "Trying to reconnect($retryCount) to $this")
-                            createConnection()
+                            Observable.never<Unit>().startWith(Unit)
                         } else {
                             logger.log(LogLevel.DEBUG, "Not trying to reconnect($retryCount) to $this")
-                            Observable.just(brokenConnection)
+                            Observable.error<Unit>(error)
                         }
                     }
                 }
-                else -> Observable.just(brokenConnection)
-            }
+                else -> Observable.error<Unit>(error)
+            }!!
 }
 
 sealed class ConnectionState {
