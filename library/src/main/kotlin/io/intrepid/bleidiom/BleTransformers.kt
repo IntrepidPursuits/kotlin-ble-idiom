@@ -45,7 +45,7 @@ internal fun fixCustomUUID(uuid: String) = when (uuid.length) {
 /**
  * Gets the [ByteArray] version of a [String] MAC-address.
  */
-val String.macAddress get() = ByteArray(6) { substring(it * 3, it * 3 + 2).toShort(16).toPositiveInt().toByte() }
+val String.macAddress get() = ByteArray(6) { (substring(it * 3, it * 3 + 2).toInt(16) and 0x000000FF).toByte() }
 
 /**
  * Gets the [String] version of a [ByteArray] MAC-address.
