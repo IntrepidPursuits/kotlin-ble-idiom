@@ -6,7 +6,9 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.powermock.modules.junit4.PowerMockRunner
+import java.util.*
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 @Suppress("FunctionName")
 @RunWith(PowerMockRunner::class)
@@ -39,5 +41,12 @@ class BleTransformersTest {
     fun test_fix_sign_for_ints_unsigned() {
         assertEquals(1, 1.toPositiveLong())
         assertEquals(4294967295, (-1).toPositiveLong())
+    }
+
+    @Test
+    fun test_String_macAddress_returns_correct_byte_array_for_0_to_255_range() {
+        val macAddress = "AF:0F:01:af:Af:aF"
+        val expectedMacAddressByteArray = byteArrayOf(175.toByte(), 15, 1, 175.toByte(), 175.toByte(), 175.toByte())
+        assertTrue(Arrays.equals(expectedMacAddressByteArray, macAddress.macAddress))
     }
 }
