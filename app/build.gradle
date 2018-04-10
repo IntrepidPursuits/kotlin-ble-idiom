@@ -42,10 +42,10 @@ afterEvaluate {
 }
 
 def rxBleVersion = "1.5.0"
-def rx2Version = "2.1.6"
-def rx2AndroidVersion = "2.0.1"
-def rx2KotlinVersion = "2.1.0"
-def kodeinVersion = "4.1.0"
+def rx2Version = "2.1.12"
+def rx2AndroidVersion = "2.0.2"
+def rx2KotlinVersion = "2.2.0"
+def kodeinVersion = "5.0.0"
 
 def kotlinTestVersion = kotlin_version
 def kotlinMockitoVersion = "1.5.0"
@@ -65,14 +65,14 @@ dependencies {
     implementation "io.reactivex.rxjava2:rxkotlin:$rx2KotlinVersion"
     api "io.reactivex.rxjava2:rxjava:$rx2Version"
 
-    implementation "com.github.salomonbrys.kodein:kodein:$kodeinVersion"
-    implementation "com.github.salomonbrys.kodein:kodein-android:$kodeinVersion"
+    implementation "org.kodein.di:kodein-di-generic-jvm:$kodeinVersion"
+    implementation "org.kodein.di:kodein-di-framework-android:$kodeinVersion"
 
     testImplementation "junit:junit:4.12"
     testImplementation "org.jetbrains.kotlin:kotlin-test-junit:$kotlinTestVersion"
     testImplementation "org.powermock:powermock-module-junit4:2.0.0-beta.5"
 
-    testImplementation "com.github.salomonbrys.kodein:kodein-conf:$kodeinVersion"
+    testImplementation "org.kodein.di:kodein-di-conf-jvm:$kodeinVersion"
     testImplementation "com.nhaarman:mockito-kotlin-kt1.1:$kotlinMockitoVersion"
     testImplementation "org.powermock:powermock-api-mockito2:2.0.0-beta.5"
     testImplementation "com.polidea.rxandroidble2:mockclient:$rxBleVersion"

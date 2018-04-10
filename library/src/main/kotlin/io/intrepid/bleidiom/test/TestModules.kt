@@ -1,18 +1,8 @@
 package io.intrepid.bleidiom.test
 
 import android.app.Application
+import android.content.BroadcastReceiver
 import android.content.Context
-import com.github.salomonbrys.kodein.Kodein
-import com.github.salomonbrys.kodein.bind
-import com.github.salomonbrys.kodein.bindings.Scope
-import com.github.salomonbrys.kodein.bindings.ScopeRegistry
-import com.github.salomonbrys.kodein.conf.ConfigurableKodein
-import com.github.salomonbrys.kodein.instance
-import com.github.salomonbrys.kodein.multiton
-import com.github.salomonbrys.kodein.provider
-import com.github.salomonbrys.kodein.scopedSingleton
-import com.github.salomonbrys.kodein.singleton
-import com.github.salomonbrys.kodein.with
 import com.nhaarman.mockito_kotlin.mock
 import com.nhaarman.mockito_kotlin.spy
 import com.polidea.rxandroidble2.RxBleClient
@@ -27,6 +17,17 @@ import io.intrepid.bleidiom.module.initBleIdiomModules
 import io.reactivex.Observable
 import io.reactivex.Scheduler
 import io.reactivex.schedulers.TestScheduler
+import org.kodein.di.Kodein
+import org.kodein.di.bindings.Scope
+import org.kodein.di.bindings.ScopeRegistry
+import org.kodein.di.conf.ConfigurableKodein
+import org.kodein.di.generic.bind
+import org.kodein.di.generic.instance
+import org.kodein.di.generic.kcontext
+import org.kodein.di.generic.multiton
+import org.kodein.di.generic.provider
+import org.kodein.di.generic.scoped
+import org.kodein.di.generic.singleton
 
 @Suppress("PropertyName")
 val LibTestKodein: Kodein
@@ -64,11 +65,11 @@ class BleTestModules {
             bind<Application>() with singleton { mock<Application>() }
             bind<Context>() with singleton { instance<Application>() }
 
-            bind<TestScheduler>() with scopedSingleton(TestScope) { TestScheduler() }
-            bind<Scheduler>() with scopedSingleton(TestScope) { with(testClass).instance<TestScheduler>() }
+            bind<TestScheduler>() with scoped(TestScope).singleton { TestScheduler() }
+            bind<Scheduler>() with scoped(TestScope).singleton { with(testClass).instance() }
 
             bind<RxBleDeviceMock>() with multiton { macAddress: String ->
-                spy(with(macAddress).instance<RxBleDevice>() as RxBleDeviceMock)
+                spy(with(macAddress).instance() as RxBleDeviceMock)
             }
         }
 
@@ -80,8 +81,8 @@ class BleTestModules {
                     .build()
             }
 
-            bind<BleIdiomDevice>() with scopedSingleton(TestScope) { device: RxBleDevice ->
-                val deviceMock = with(device.macAddress).instance<RxBleDeviceMock>()
+            bind<BleIdiomDevice>() with scoped(TestScope).singleton { device: RxBleDevice ->
+                val deviceMock = with(device.macAddress).instance()
                 BleIdiomDevice(deviceMock)
             }
 
@@ -91,10 +92,14 @@ class BleTestModules {
     }
 }
 
-internal object TestScope : Scope<Any> {
+internal object TestScope : Scope<Any, Any> {
+    override fun getBindingContext(envContext: Any): Any {
+       return kcontext(envContext)
+    }
+
     private val registry = hashMapOf<Int, ScopeRegistry>()
 
-    override fun getRegistry(context: Any) = synchronized(registry) {
+    override fun getRegistry(receiver: Any?, context: Any) = synchronized(registry) {
         registry.getOrPut(context.hashCode()) { ScopeRegistry() }
     }
 }

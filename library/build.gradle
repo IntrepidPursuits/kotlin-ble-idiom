@@ -62,14 +62,14 @@ dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
     implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
     implementation "org.jetbrains.kotlin:kotlin-reflect:$kotlin_version"
-    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:0.22"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:0.22.5"
 
     implementation "com.android.support:appcompat-v7:$supportVersion"
 
     implementation "com.polidea.rxandroidble2:rxandroidble:$rxBleVersion"
 
-    implementation 'io.arrow-kt:arrow-core:0.6.0'
-    implementation 'io.arrow-kt:arrow-syntax:0.6.0'
+    implementation 'io.arrow-kt:arrow-core:0.7.0'
+    implementation 'io.arrow-kt:arrow-syntax:0.7.0'
 
     implementation "at.favre.lib:bytes:0.4.6"
 
@@ -78,15 +78,16 @@ dependencies {
     implementation 'com.jakewharton.rx2:replaying-share:2.0.1'
     api "io.reactivex.rxjava2:rxjava:$rx2Version"
 
-    implementation "com.github.salomonbrys.kodein:kodein:$kodeinVersion"
-    implementation "com.github.salomonbrys.kodein:kodein-android:$kodeinVersion"
-    implementation "com.github.salomonbrys.kodein:kodein-conf:$kodeinVersion"
+    implementation "org.kodein.di:kodein-di-generic-jvm:$kodeinVersion"
+    implementation "org.kodein.di:kodein-di-framework-android:$kodeinVersion"
+    implementation "org.kodein.di:kodein-di-conf-jvm:$kodeinVersion"
+
 
     // The classes in 'io.intrepid.bleidiom.test' are never called in
     // the code of an app, but still should compile.
     // Tests in an app that want to use these classes in 'io.intrepid.bleidiom.test'
     // should use 'testImplementation' on the list of libraries below.
-    compileOnly "com.github.salomonbrys.kodein:kodein-conf:$kodeinVersion"
+    compileOnly "org.kodein.di:kodein-di-conf-jvm:$kodeinVersion"
     compileOnly "com.nhaarman:mockito-kotlin-kt1.1:$kotlinMockitoVersion"
     compileOnly "org.powermock:powermock-api-mockito2:$powerMockVersion"
     compileOnly "com.polidea.rxandroidble2:mockclient:$rxBleVersion"
