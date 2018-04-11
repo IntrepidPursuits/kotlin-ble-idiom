@@ -59,11 +59,12 @@ class BleScanner(private val bleClient: RxBleClient) : ServiceDeviceFactory() {
      * Subscribing to this Observable will start the scanning.
      * Un-subscribing from this Observable will stop the scanning.
      *
+     * @param settings [ScanSettings] to control latency and how many times device is reported.
      * @param T The type of [BleService] that this scanner should emit.
      * @return an [Observable] of [BleService] instances.
      */
     inline
-    fun <reified T : BleService<T>> scanForService() = scanForServices().ofType<T>()
+    fun <reified T : BleService<T>> scanForService(settings: ScanSettings = ScanSettings.Builder().build()) = scanForServices(settings).ofType<T>()
 
     /**
      * Starts scanning of BLE devices that implement any registered and configured [BleService].
@@ -74,10 +75,10 @@ class BleScanner(private val bleClient: RxBleClient) : ServiceDeviceFactory() {
      * Subscribing to this Observable will start the scanning.
      * Un-subscribing from this Observable will stop the scanning.
      *
+     * @param settings [ScanSettings] to control latency and how many times device is reported.
      * @return an [Observable] of [BleService] instances.
      */
-    fun scanForServices(): Observable<out BleService<*>> {
-        val settings: ScanSettings = ScanSettings.Builder().build()
+    fun scanForServices(settings: ScanSettings): Observable<out BleService<*>> {
         return bleClient.scanBleDevices(settings)
                 .flatMap { scanResult -> createScannedDevice(scanResult) }
     }
