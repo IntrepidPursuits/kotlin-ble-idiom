@@ -66,7 +66,7 @@ dependencies {
 
     implementation "com.android.support:appcompat-v7:$supportVersion"
 
-    implementation "com.polidea.rxandroidble2:rxandroidble:$rxBleVersion"
+    api "com.polidea.rxandroidble2:rxandroidble:$rxBleVersion"
 
     implementation 'io.arrow-kt:arrow-core:0.6.0'
     implementation 'io.arrow-kt:arrow-syntax:0.6.0'

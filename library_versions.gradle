@@ -1,8 +1,8 @@
 
 ext {
-    kotlin_version = '1.2.30'
+    kotlin_version = '1.2.50'
     supportVersion = "27.1.0"
-    rxBleVersion = "1.5.0"
+    rxBleVersion = "1.6.0"
     rx2Version = "2.1.7"
     rx2AndroidVersion = "2.0.1"
     rx2KotlinVersion = "2.2.0"
